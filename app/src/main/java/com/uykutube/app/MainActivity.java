@@ -496,8 +496,13 @@ public class MainActivity extends Activity {
                 "⟳ Yenile",
                 "🔋 Arka plan çalma izni (pil)",
         };
+        String versionName = "1.5";
+        try {
+            versionName = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception ignored) {
+        }
         new AlertDialog.Builder(this)
-                .setTitle("FireTube")
+                .setTitle("FireTube v" + versionName)
                 .setItems(items, (d, which) -> {
                     if (which <= 6) {
                         PlaybackService.setTimer(mins[which]);
