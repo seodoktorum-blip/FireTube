@@ -36,6 +36,7 @@
   var adProgressAt = 0;   // reklam videosunun son ilerleme zamanı
   var adEscapeDone = false;
   var lastSkipClickAt = 0;
+  var lastAdSeekAt = 0;
   var stallSince = 0;
   var stallRetries = 0;
   var lastUser = Date.now();
@@ -83,6 +84,26 @@
       // Reklamı ağdan engelleyemediysek bile uyandırmasın: sessiz + 16x hız
       v.muted = true;
       try { if (v.playbackRate < 16) v.playbackRate = 16; } catch (e) {}
+      // En hızlı yol: reklamı İNDİRİLMİŞ verinin sonuna atla (veriyi beklemek
+      // yok; 16x de arka planda sürer). 2 sn'de bir tekrarlanır, her seferinde
+      // daha ileriye atlar. Tam sona atlamak kuyruk indirmeyi bekletiyordu.
+      if (Date.now() - lastAdSeekAt > 2000) {
+        lastAdSeekAt = Date.now();
+        var adDur2 = v.duration;
+        var target = 0;
+        try {
+          var b = v.buffered;
+          for (var bi = 0; bi < b.length; bi++) target = Math.max(target, b.end(bi));
+        } catch (e) {}
+        if (isFinite(adDur2) && adDur2 > 0) target = Math.min(target, adDur2 - 0.2);
+        if (target > v.currentTime + 1) {
+          try {
+            v.currentTime = target;
+            say('reklam ileri atlandı → ' + Math.round(target) + '/' +
+                Math.round(isFinite(adDur2) ? adDur2 : 0) + ' sn');
+          } catch (e) {}
+        }
+      }
       // Atla düğmesi en fazla 2 sn'de bir tıklanır: daha sık basışta oynatıcı
       // tıklama fırtınasıyla bozulabiliyordu (günlükte 4 sn'de 30+ basış görüldü)
       var skip = q('.ytp-ad-skip-button-modern, .ytp-ad-skip-button, .ytp-skip-ad-button, .videoAdUiSkipButton, .ytp-ad-skip-slot button');
