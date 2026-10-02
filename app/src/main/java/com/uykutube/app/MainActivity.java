@@ -336,6 +336,7 @@ public class MainActivity extends Activity {
                 hideCallback.onCustomViewHidden();
                 hideCallback = null;
             }
+            kickWebViewSurface();
         }
 
         private CustomViewCallback hideCallback;
@@ -491,10 +492,31 @@ public class MainActivity extends Activity {
         super.onPause();
     }
 
+    /* WebView çizim yüzeyi (surface) uygulama arka plandayken ölebiliyor:
+       ses ve JS devam eder ama ekran simsiyah kalır (yalnızca süreç yeniden
+       başlatınca düzelirdi). Kısa bir görünmez→görünür geçişi yüzeyi yeniden
+       bağlar; ekran her açıldığında otomatik uygulanır. */
+    public void kickWebViewSurface() {
+        runOnUiThread(() -> {
+            if (web == null || isFinishing() || isDestroyed()) return;
+            try {
+                web.setVisibility(View.INVISIBLE);
+                web.post(() -> {
+                    try {
+                        web.setVisibility(View.VISIBLE);
+                    } catch (Exception ignored) {
+                    }
+                });
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
         web.resumeTimers();
+        kickWebViewSurface();
     }
 
     @Override

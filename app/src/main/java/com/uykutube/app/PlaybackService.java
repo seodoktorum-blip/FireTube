@@ -34,6 +34,7 @@ public class PlaybackService extends Service {
     private final Handler h = new Handler(Looper.getMainLooper());
     private final Runnable tick = this::onTick;
     private int tickCount = 0;
+    private boolean lastInteractive = true;
 
     @Override
     public void onCreate() {
@@ -113,6 +114,15 @@ public class PlaybackService extends Service {
                     a.lastStatusAt = System.currentTimeMillis(); // döngüyü önle
                     a.rebuildWebView("durum-2dk-dir-gelmiyor");
                 }
+                // Ekran açılma geçişinde WebView çizim yüzeyini tekmele (siyah ekran
+                // önlemi): onResume her durumda tetiklenmeyebilir, burada da izlenir.
+                PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+                boolean interactive = pm.isInteractive();
+                if (interactive && !lastInteractive) {
+                    Log.d(TAG, "ekran açıldı — yüzey tekmeleniyor");
+                    a.kickWebViewSurface();
+                }
+                lastInteractive = interactive;
             } catch (Exception e) {
                 Log.w(TAG, "tick hatası: " + e.getMessage());
             }

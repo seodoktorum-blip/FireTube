@@ -35,6 +35,7 @@
   var adLastPos = -1;     // reklam videosunun son görülen konumu
   var adProgressAt = 0;   // reklam videosunun son ilerleme zamanı
   var adEscapeDone = false;
+  var lastSkipClickAt = 0;
   var stallSince = 0;
   var stallRetries = 0;
   var lastUser = Date.now();
@@ -82,8 +83,14 @@
       // Reklamı ağdan engelleyemediysek bile uyandırmasın: sessiz + 16x hız
       v.muted = true;
       try { if (v.playbackRate < 16) v.playbackRate = 16; } catch (e) {}
+      // Atla düğmesi en fazla 2 sn'de bir tıklanır: daha sık basışta oynatıcı
+      // tıklama fırtınasıyla bozulabiliyordu (günlükte 4 sn'de 30+ basış görüldü)
       var skip = q('.ytp-ad-skip-button-modern, .ytp-ad-skip-button, .ytp-skip-ad-button, .videoAdUiSkipButton, .ytp-ad-skip-slot button');
-      if (skip) { skip.click(); say('atla düğmesine basıldı'); }
+      if (skip && Date.now() - lastSkipClickAt > 2000) {
+        lastSkipClickAt = Date.now();
+        skip.click();
+        say('atla düğmesine basıldı');
+      }
 
       // Reklam-takılma çıkışı: yalnızca reklam videosu OYNIYOR ama ilerlemiyorsa
       // "donuk" sayılır; duraklıysa önce oynatılmaya çalışılır. Çıkışlar
