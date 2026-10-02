@@ -1,0 +1,22 @@
+# Gradle
+.gradle/
+build/
+app/build/
+local.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Bu depoda Gradle dağıtımı yerel olarak tools/ altında tutuluyor
+# (~130 MB) — GitHub'a girmemesi için dışlandı. Derlemek için kendi
+# Gradle'ınızı (9.x) veya Android Studio'yu kullanın.
+tools/
+
+# İşletim sistemi / editör kalıntıları
+.DS_Store
+Thumbs.db
+*.log
