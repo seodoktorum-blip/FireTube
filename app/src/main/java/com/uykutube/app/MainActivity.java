@@ -70,6 +70,8 @@ public class MainActivity extends Activity {
     private SwipeRefreshLayout swipe;
     private final AtomicInteger blocked = new AtomicInteger();
     private String injectSrc;
+    private String preinjectSrc;
+    private volatile String uaString = null;
     private boolean askedNotifPermission = false;
     private boolean askedBattery = false;
     private volatile String lastUrl = null;
@@ -84,6 +86,7 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         instance = this;
         injectSrc = readAsset("inject.js");
+        preinjectSrc = readAsset("preinject.js");
 
         root = new FrameLayout(this);
         root.setBackgroundColor(Color.parseColor("#0F0F0F"));
@@ -147,6 +150,55 @@ public class MainActivity extends Activity {
         web.loadUrl(lastUrl);
     }
 
+    /* Ana HTML belgesini kendimiz indirir, <head>'in hemen sonrasına
+       preinject.js'i gömer ve değiştirilmiş belgeyi döndürür. Hata olursa
+       null döner ve WebView normal şekilde yükler. */
+    private WebResourceResponse rewriteHtml(String urlStr) {
+        java.net.HttpURLConnection c = null;
+        try {
+            java.net.URL url = new java.net.URL(urlStr);
+            c = (java.net.HttpURLConnection) url.openConnection();
+            c.setConnectTimeout(10000);
+            c.setReadTimeout(15000);
+            c.setInstanceFollowRedirects(true);
+            c.setRequestProperty("User-Agent", uaString != null ? uaString : "");
+            c.setRequestProperty("Accept-Language", "tr,en;q=0.9");
+            // açılışı basit tut: sıkıştırma isteme
+            c.setRequestProperty("Accept-Encoding", "identity");
+            String cookies = CookieManager.getInstance().getCookie(urlStr);
+            if (cookies != null) c.setRequestProperty("Cookie", cookies);
+
+            int code = c.getResponseCode();
+            if (code != 200) return null;
+
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            try (java.io.InputStream in = c.getInputStream()) {
+                byte[] buf = new byte[16384];
+                int n;
+                while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+            }
+            String html = new String(bos.toByteArray(), StandardCharsets.UTF_8);
+            int head = html.indexOf("<head");
+            int gt = head >= 0 ? html.indexOf('>', head) : -1;
+            if (gt < 0) return null;
+            html = html.substring(0, gt + 1) + "<script>" + preinjectSrc + "</script>" + html.substring(gt + 1);
+
+            WebResourceResponse res = new WebResourceResponse("text/html", "utf-8",
+                    new ByteArrayInputStream(html.getBytes(StandardCharsets.UTF_8)));
+            java.util.Map<String, String> headers = new java.util.HashMap<>();
+            headers.put("Content-Type", "text/html; charset=utf-8");
+            // CSP başlıklarını bilerek iletmiyoruz: kendi enjekte ettiğimiz
+            // satır içi script'in çalışabilmesi için.
+            res.setResponseHeaders(headers);
+            return res;
+        } catch (Exception e) {
+            Log.w(TAG, "html yeniden yazma başarısız (" + e.getMessage() + ") — normal yükleme");
+            return null;
+        } finally {
+            if (c != null) c.disconnect();
+        }
+    }
+
     /* WebView'i (yeniden) kurar — ilk açılışta ve renderer çöktüğünde
        (rebuildWebView) kullanılır. */
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
@@ -160,6 +212,7 @@ public class MainActivity extends Activity {
         s.setGeolocationEnabled(false);
         // UA'dan WebView ("wv") ibaresini kaldır; Google girişi webview'e takılmasın
         s.setUserAgentString(s.getUserAgentString().replace("; wv", ""));
+        uaString = s.getUserAgentString(); // arka plan iş parçacığından kullanılacak
 
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
@@ -176,6 +229,16 @@ public class MainActivity extends Activity {
                         runOnUiThread(MainActivity.this::updateChip);
                         return new WebResourceResponse("text/plain", "utf-8",
                                 new ByteArrayInputStream(new byte[0]));
+                    }
+                }
+                // Ana belge (HTML) isteklerini kendimiz indirip <head>'in başına
+                // preinject.js gömeriz: script YouTube'un kodundan ÖNCE çalışır ve
+                // player verisinden reklam alanlarını siler (masaüstü eklenti tekniği).
+                if (request.isForMainFrame() && "GET".equals(request.getMethod()) && preinjectSrc != null) {
+                    String host = url == null || url.getHost() == null ? "" : url.getHost().toLowerCase(Locale.ROOT);
+                    if (host.endsWith("youtube.com") && !us.contains("/embed/")) {
+                        WebResourceResponse rewritten = rewriteHtml(us);
+                        if (rewritten != null) return rewritten;
                     }
                 }
                 return super.shouldInterceptRequest(view, request);
