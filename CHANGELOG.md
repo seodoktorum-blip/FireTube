@@ -1,5 +1,17 @@
 # Sürüm Geçmişi
 
+## v1.6 — 6 Ekim 2026
+**uBlock seviyesinde derin reklam temizleme** (1-2 reklamın sızmaya devam
+etmesi üzerine):
+- Derin özyinelemeli temizleme: /youtubei/ yanıtlarının HER derinliğindeki
+  reklam-şekilli anahtarlar sökülür (adSlots, adPods, adSegments, adSurvey,
+  ssapConfig vb. 19 anahtar) — YouTube alan adları değiştirdiğinde de tutar.
+- JSON.parse yaması: fetch dışı yollar (XHR vb.) da kapanır.
+- Güvence süpürmesi: YouTube player verisini sonradan yeniden atarsa
+  reklam alanları tur içinde tekrar silinir.
+- Günlük çözümlemesi: sızmalar /youtubei/v1/player/ad_break uç noktasından
+  geliyordu; artık o yanıtlar derinlemesine temizleniyor.
+
 ## v1.5 — 2 Ekim 2026
 **Pre-injection: masaüstü eklentisi tekniğiyle kökten reklam engelleme.**
 Ana HTML belgesi uygulama tarafından indirilip `<head>`'in başına script gömülür;

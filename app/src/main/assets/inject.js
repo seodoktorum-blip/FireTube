@@ -297,7 +297,23 @@
   /* Video bitince müdahale YOK: YouTube'un kendi autoplay ayarı kapalıysa
      video bitince durması doğrudur; açıksa YouTube kendisi sıradakine geçer. */
 
+  /* Güvence süpürmesi: YouTube kendi verisini sonradan yeniden atayıp
+     reklam alanlarını geri getirebilir (ön script'in setter tuzağını
+     defineProperty ile ezerek). Her turda ucuzca kontrol edilir. */
+  function sweepPlayerResponse() {
+    try {
+      var y = window.ytInitialPlayerResponse;
+      if (y && (y.adPlacements || y.adSlots)) {
+        delete y.adPlacements;
+        delete y.adSlots;
+        delete y.adBreakHeartbeatParams;
+        say('geç gelen player verisinden reklam alanları silindi');
+      }
+    } catch (e) {}
+  }
+
   function tickChecks() {
+    sweepPlayerResponse();
     handleAd();
     handleDialogs();
     hideClutter();
@@ -310,7 +326,7 @@
   /* Ekran kapalıyken tarayıcı zamanlayıcıları kısıtlanır; Android tarafı
      (PlaybackService) bu fonksiyonu saniyede bir doğrudan çağırır. */
   window.__uykuTick = function () {
-    try { handleAd(); handleDialogs(); handleStall(); handleBufferStall(); autoStart(); } catch (e) {}
+    try { sweepPlayerResponse(); handleAd(); handleDialogs(); handleStall(); handleBufferStall(); autoStart(); } catch (e) {}
   };
 
   window.__uykuStatus = function () {
