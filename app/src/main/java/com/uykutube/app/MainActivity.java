@@ -50,7 +50,12 @@ public class MainActivity extends Activity {
        reklama ait MEDYA URL'lerini boş yanıtla kesmek video oynatıcıyı kilitliyor
        (simsiyah ekran + sessizlik). Reklamın kendisi inject.js'te oynatıcı
        seviyesinde yakalanıp sessizleştirilip 16x hızla geçilir. */
-    private static final Pattern[] BLOCK_RE = new Pattern[]{
+    /* Yerlesik varsayilanlar; acilista uzaktan (GitHub rules.json) guncellenir:
+       ABP'nin liste guncellemesi gibi — YouTube format degistirdiginde APK
+       kurmadan sadece rules.json guncellenir. */
+    private static final String RULES_URL =
+            "https://raw.githubusercontent.com/seodoktorum-blip/FireTube/main/rules.json";
+    private volatile Pattern[] BLOCK_RE = new Pattern[]{
             Pattern.compile("://[^/]*doubleclick\\.net/"),
             Pattern.compile("://[^/]*googlesyndication\\.com/"),
             Pattern.compile("://[^/]*googleadservices\\.com/"),
@@ -61,6 +66,7 @@ public class MainActivity extends Activity {
             Pattern.compile("/pagead/"),
             Pattern.compile("/api/stats/ads"),
     };
+    private volatile String remoteRulesJson = null; // son basarili kurallar (sayfaya gomulur)
 
     public static volatile MainActivity instance;
 
@@ -140,6 +146,8 @@ public class MainActivity extends Activity {
             return insets;
         });
 
+        loadRules();
+
         createWebView();
 
         if (savedInstanceState != null) {
@@ -148,6 +156,90 @@ public class MainActivity extends Activity {
             lastUrl = START_URL;
         }
         web.loadUrl(lastUrl);
+    }
+
+    /* Kurallar: once obebellekten, hemen ardindan arka planda GitHub'tan tazele.
+       Basariliysa ag desenleri yeniden derlenir ve JSON sonraki sayfa yuklemesine gomulur. */
+    private void loadRules() {
+        new Thread(() -> {
+            File cache = new File(getFilesDir(), "rules.json");
+            try {
+                // 1) taze indir
+                java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(RULES_URL).openConnection();
+                c.setConnectTimeout(8000);
+                c.setReadTimeout(10000);
+                if (c.getResponseCode() == 200) {
+                    String body;
+                    try (java.io.InputStream in = c.getInputStream()) {
+                        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                        byte[] buf = new byte[8192];
+                        int n;
+                        while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+                        body = new String(bos.toByteArray(), StandardCharsets.UTF_8);
+                    }
+                    c.disconnect();
+                    if (body.contains("adKeys")) {
+                        try (java.io.FileOutputStream fo = new java.io.FileOutputStream(cache)) {
+                            fo.write(body.getBytes(StandardCharsets.UTF_8));
+                        }
+                        remoteRulesJson = body;
+                        applyBlockPatterns(body);
+                        appLog("KURALLAR: uzaktan yuklendi (v" + rulesVersion(body) + ")");
+                        Log.d(TAG, "uzak kurallar uygulandi");
+                        return;
+                    }
+                } else {
+                    c.disconnect();
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "uzak kural cekme hatasi: " + e.getMessage());
+            }
+            // 2) yedek: obebellek
+            try {
+                if (cache.exists()) {
+                    String body = new String(java.nio.file.Files.readAllBytes(cache.toPath()), StandardCharsets.UTF_8);
+                    remoteRulesJson = body;
+                    applyBlockPatterns(body);
+                    appLog("KURALLAR: obebellekten yuklendi (v" + rulesVersion(body) + ")");
+                } else {
+                    appLog("KURALLAR: yerlesik varsayilanlar kullaniliyor");
+                }
+            } catch (Exception ignored) {
+            }
+        }).start();
+    }
+
+    private String rulesVersion(String json) {
+        try {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                    "\"version\"\\s*:\\s*(\\d+)").matcher(json);
+            return m.find() ? m.group(1) : "?";
+        } catch (Exception e) {
+            return "?";
+        }
+    }
+
+    private void applyBlockPatterns(String json) {
+        try {
+            java.util.ArrayList<Pattern> list = new java.util.ArrayList<>();
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                    "\"blockPatterns\"\\s*:\\s*\\[(.*?)\\]", java.util.regex.Pattern.DOTALL).matcher(json);
+            if (m.find()) {
+                java.util.regex.Matcher s = java.util.regex.Pattern.compile("\"([^\"]+)\"").matcher(m.group(1));
+                while (s.find()) {
+                    try {
+                        list.add(Pattern.compile(s.group(1)));
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+            if (!list.isEmpty()) {
+                BLOCK_RE = list.toArray(new Pattern[0]);
+                Log.d(TAG, "ag desenleri guncellendi: " + list.size());
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "kural uygulama hatasi: " + e.getMessage());
+        }
     }
 
     /* Ana HTML belgesini kendimiz indirir, <head>'in hemen sonrasına
@@ -181,7 +273,10 @@ public class MainActivity extends Activity {
             int head = html.indexOf("<head");
             int gt = head >= 0 ? html.indexOf('>', head) : -1;
             if (gt < 0) return null;
-            html = html.substring(0, gt + 1) + "<script>" + preinjectSrc + "</script>" + html.substring(gt + 1);
+            String rulesBoot = (remoteRulesJson != null
+                    ? "window.__FIRE_RULES=" + remoteRulesJson + ";"
+                    : "");
+            html = html.substring(0, gt + 1) + "<script>" + rulesBoot + preinjectSrc + "</script>" + html.substring(gt + 1);
 
             WebResourceResponse res = new WebResourceResponse("text/html", "utf-8",
                     new ByteArrayInputStream(html.getBytes(StandardCharsets.UTF_8)));

@@ -30,15 +30,25 @@
 
   /* Derin temizleme: yanıtın herhangi bir derinliğindeki reklam-şekilli
      anahtarları söker (YouTube alan adlarını sık değiştiriyor; bilinen
-     üst düzey alanlar yetmeyebiliyor). Yalnızca /youtubei/ yanıtlarında
-     kullanılır (büyük nesneler, seyrek çağrı). */
-  var AD_KEYS = {
-    adPlacements: 1, adSlots: 1, adSlotRenderer: 1, adSlotMetadata: 1,
-    adBreakHeartbeatParams: 1, adParams: 1, adPods: 1, adSegments: 1,
-    adSurvey: 1, adTelemetry: 1, adSystemMetadata: 1, adCueRanges: 1,
-    adSlotsInfo: 1, adPlayers: 1, ssapConfig: 1, adBreakChart: 1,
-    adChunk: 1, adPlacementRenderer: 1, adMessage: 1
-  };
+     üst düzey alanlar yetmeyebiliyor). Anahtar listesi GitHub'taki
+     rules.json'dan güncellenir (window.__FIRE_RULES) — APK kurmadan. */
+  var AD_KEYS = {};
+  try {
+    var remote = window.__FIRE_RULES && window.__FIRE_RULES.adKeys;
+    if (remote && remote.length) {
+      for (var ri = 0; ri < remote.length; ri++) AD_KEYS[remote[ri]] = 1;
+      say('kurallar uzaktan yüklendi (' + remote.length + ' anahtar)');
+    }
+  } catch (e) {}
+  if (!AD_KEYS.adPlacements) {
+    AD_KEYS = {
+      adPlacements: 1, adSlots: 1, adSlotRenderer: 1, adSlotMetadata: 1,
+      adBreakHeartbeatParams: 1, adParams: 1, adPods: 1, adSegments: 1,
+      adSurvey: 1, adTelemetry: 1, adSystemMetadata: 1, adCueRanges: 1,
+      adSlotsInfo: 1, adPlayers: 1, ssapConfig: 1, adBreakChart: 1,
+      adChunk: 1, adPlacementRenderer: 1, adMessage: 1
+    };
+  }
 
   function deepPrune(o, depth) {
     try {

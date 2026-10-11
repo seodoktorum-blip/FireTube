@@ -1,5 +1,15 @@
 # Sürüm Geçmişi
 
+## v1.8 — 11 Ekim 2026
+**ABP tarzı otomatik güncellenen kurallar (uzaktan kural sistemi).**
+Masaüstü reklam engelleyicilerin "hiç sızıntı olmamasının" sırrı günlük
+güncellenen liste ekosistemi; uygulamada kurallar APK içine donuk gömülüydü.
+Artık: kurallar GitHub'daki rules.json'da tutulur; uygulama her açılışta
+çeker (önbellek + yerleşik yedek ile). YouTube format değiştirdiğinde
+sadece rules.json güncellenir — APK kurulmadan telefon kendini iyileştirir.
+- Ağ desenleri (BLOCK_RE) çalışma anında derlenir
+- Derin temizlik anahtarları sayfaya gömülür (window.__FIRE_RULES)
+
 ## v1.7 — 11 Ekim 2026
 **Siyah ekran kök çözümü (ağır yüzey onarımı).** 5 günlük saha verisi
 (1294 nabız ≈ 21 saat dinleme) çözümlemesi: gece MIUI video motorunu
