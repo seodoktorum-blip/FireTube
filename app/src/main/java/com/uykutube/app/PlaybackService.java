@@ -118,6 +118,7 @@ public class PlaybackService extends Service {
                 // yanı sıra uzun gece oturumlarında da güncel kalsın).
                 if (tickCount > 0 && tickCount % 21600 == 0) {
                     a.loadRules();
+                    a.loadFilterLists();
                 }
                 // Ekran açılma geçişinde WebView çizim yüzeyini tekmele (siyah ekran
                 // önlemi): onResume her durumda tetiklenmeyebilir, burada da izlenir.

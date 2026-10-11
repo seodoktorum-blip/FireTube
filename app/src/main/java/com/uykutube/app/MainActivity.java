@@ -68,6 +68,26 @@ public class MainActivity extends Activity {
     };
     private volatile String remoteRulesJson = null; // son basarili kurallar (sayfaya gomulur)
 
+    /* ABP/EasyList topluluk listeleri: ||domain^ kurallarindan domain kumesi.
+       listsReady true olunca shouldInterceptRequest bu kumeleri kullanir. */
+    private static final String[] DEFAULT_FILTER_LISTS = {
+            "https://easylist-downloads.adblockplus.org/v3/full/turkish-filters+easylist.txt",
+            "https://easylist-downloads.adblockplus.org/v3/full/distraction-control-free.txt",
+            "https://easylist-downloads.adblockplus.org/v3/full/fanboy-social.txt",
+            "https://easylist-downloads.adblockplus.org/v3/full/fanboy-notifications.txt",
+            "https://easylist-downloads.adblockplus.org/v3/full/easyprivacy.txt",
+            "https://easylist-downloads.adblockplus.org/v3/full/abp-filters-anti-cv.txt",
+    };
+    // Video/oynatma altyapisi: bu domainlere ABP kurali denk gelse bile DOKUNMA
+    private static final String[] SAFE_SUFFIXES = {
+            "googlevideo.com", "youtube.com", "youtube-nocookie.com", "ytimg.com",
+            "gvt1.com", "ggpht.com", "googleusercontent.com", "googleapis.com",
+            "gstatic.com", "google.com", "youtubeeducation.com", "yt.be", "youtu.be",
+    };
+    private volatile java.util.HashSet<String> adDomains = new java.util.HashSet<>();
+    private volatile java.util.HashSet<String> excDomains = new java.util.HashSet<>();
+    private volatile boolean listsReady = false;
+
     public static volatile MainActivity instance;
 
     public WebView web;
@@ -147,6 +167,7 @@ public class MainActivity extends Activity {
         });
 
         loadRules();
+        loadFilterLists();
 
         createWebView();
 
@@ -208,8 +229,7 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    private int rulesVer(String json) {
-        try {
+    private int rulesVer(String json) {        try {
             java.util.regex.Matcher m = java.util.regex.Pattern.compile(
                     "\"version\"\\s*:\\s*(\\d+)").matcher(json);
             return m.find() ? Integer.parseInt(m.group(1)) : 0;
@@ -233,6 +253,122 @@ public class MainActivity extends Activity {
             fo.write(body.getBytes(StandardCharsets.UTF_8));
         } catch (Exception ignored) {
         }
+    }
+
+    /* ABP topluluk listelerini indirir/ayiklar (24 saat onebellek).
+       ||domain^  -> adDomains;  @@||domain^ -> excDomains. Yalniz domain-duzey
+       kurallar alinir; oynatma altyapisi SAFE_SUFFIXES ile korunur. */
+    public void loadFilterLists() {
+        new Thread(() -> {
+            String[] urls = DEFAULT_FILTER_LISTS;
+            // rules.json'da filterLists varsa onu kullan (uzaktan yapilandirilabilir)
+            try {
+                String rules = remoteRulesJson != null ? remoteRulesJson
+                        : readRulesFile("rules.json") != null ? readRulesFile("rules.json")
+                        : readRulesFile("rules.local.json");
+                if (rules != null) {
+                    java.util.ArrayList<String> u = new java.util.ArrayList<>();
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                            "\"filterLists\"\\s*:\\s*\\[(.*?)\\]", java.util.regex.Pattern.DOTALL).matcher(rules);
+                    if (m.find()) {
+                        java.util.regex.Matcher s = java.util.regex.Pattern.compile("\"(https?://[^\"]+)\"").matcher(m.group(1));
+                        while (s.find()) u.add(s.group(1));
+                    }
+                    if (!u.isEmpty()) urls = u.toArray(new String[0]);
+                }
+            } catch (Exception ignored) {
+            }
+
+            File dir = new File(getFilesDir(), "filterlists");
+            //noinspection ResultOfMethodCallIgnored
+            dir.mkdirs();
+            java.util.HashSet<String> ads = new java.util.HashSet<>(adDomains);
+            java.util.HashSet<String> exc = new java.util.HashSet<>(excDomains);
+            int okCount = 0;
+            for (int i = 0; i < urls.length; i++) {
+                File f = new File(dir, "list" + i + ".txt");
+                boolean fresh = f.exists() && System.currentTimeMillis() - f.lastModified() < 24L * 3600 * 1000;
+                if (!fresh) {
+                    if (!downloadToFile(urls[i], f)) continue;
+                    //noinspection ResultOfMethodCallIgnored
+                    f.setLastModified(System.currentTimeMillis());
+                }
+                okCount++;
+                try (java.io.BufferedReader r = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(new java.io.FileInputStream(f), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = r.readLine()) != null) parseFilterLine(line, ads, exc);
+                } catch (Exception ignored) {
+                }
+            }
+            adDomains = ads;
+            excDomains = exc;
+            listsReady = okCount > 0;
+            appLog("LISTELER: " + okCount + "/" + urls.length + " ABP listesi aktif (" +
+                    ads.size() + " domain, " + exc.size() + " istisna)");
+            Log.d(TAG, "ABP listeleri hazir: " + ads.size() + " domain");
+        }).start();
+    }
+
+    private boolean downloadToFile(String urlStr, File dest) {
+        java.net.HttpURLConnection c = null;
+        try {
+            c = (java.net.HttpURLConnection) new java.net.URL(urlStr).openConnection();
+            c.setConnectTimeout(10000);
+            c.setReadTimeout(20000);
+            if (c.getResponseCode() != 200) {
+                c.disconnect();
+                return false;
+            }
+            try (java.io.InputStream in = c.getInputStream();
+                 java.io.FileOutputStream fo = new java.io.FileOutputStream(dest)) {
+                byte[] buf = new byte[16384];
+                int n;
+                while ((n = in.read(buf)) > 0) fo.write(buf, 0, n);
+            }
+            return true;
+        } catch (Exception e) {
+            Log.w(TAG, "liste indirme hatasi: " + urlStr + " -> " + e.getMessage());
+            if (c != null) c.disconnect();
+            return false;
+        }
+    }
+
+    private void parseFilterLine(String line, java.util.HashSet<String> ads, java.util.HashSet<String> exc) {
+        line = line.trim();
+        if (line.isEmpty() || line.charAt(0) == '!' || line.charAt(0) == '[' || line.charAt(0) == '#') return;
+        boolean isException = line.startsWith("@@");
+        if (isException) line = line.substring(2);
+        if (!line.startsWith("||")) return;
+        String rest = line.substring(2);
+        int end = rest.length();
+        for (int i = 0; i < rest.length(); i++) {
+            char ch = rest.charAt(i);
+            if (ch == '^' || ch == '/' || ch == '?' || ch == '*' || ch == '$' || ch == '"' || ch == ' ' || ch == ',') {
+                end = i;
+                break;
+            }
+        }
+        String domain = rest.substring(0, end).toLowerCase(Locale.ROOT);
+        if (domain.length() < 4 || domain.indexOf('.') < 0) return;
+        for (String safe : SAFE_SUFFIXES) {
+            if (domain.endsWith(safe)) return;
+        }
+        if (isException) exc.add(domain);
+        else ads.add(domain);
+    }
+
+    /* host'un her ust-soneksi kumede mi? (a.b.c.com -> b.c.com, c.com ...) */
+    private static boolean suffixMatch(String host, java.util.HashSet<String> set) {
+        if (set.isEmpty()) return false;
+        String h = host;
+        while (h != null && !h.isEmpty()) {
+            if (set.contains(h)) return true;
+            int dot = h.indexOf('.');
+            if (dot < 0 || dot >= h.length() - 1) return false;
+            h = h.substring(dot + 1);
+        }
+        return false;
     }
 
     private void applyBlockPatterns(String json) {
@@ -334,6 +470,18 @@ public class MainActivity extends Activity {
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 Uri url = request.getUrl();
                 String us = url == null ? "" : url.toString();
+                // 1) ABP/EasyList topluluk domain listesi (her zaman güncel;
+                //    istisna kuralları önce denetlenir, video altyapısı korunur)
+                String host = url == null || url.getHost() == null ? "" : url.getHost().toLowerCase(Locale.ROOT);
+                if (listsReady && !host.isEmpty()) {
+                    if (!suffixMatch(host, excDomains) && suffixMatch(host, adDomains)) {
+                        blocked.incrementAndGet();
+                        runOnUiThread(MainActivity.this::updateChip);
+                        return new WebResourceResponse("text/plain", "utf-8",
+                                new ByteArrayInputStream(new byte[0]));
+                    }
+                }
+                // 2) Bizim özel ağ desenleri (rules.json)
                 for (Pattern p : BLOCK_RE) {
                     if (p.matcher(us).find()) {
                         blocked.incrementAndGet();
@@ -346,7 +494,6 @@ public class MainActivity extends Activity {
                 // preinject.js gömeriz: script YouTube'un kodundan ÖNCE çalışır ve
                 // player verisinden reklam alanlarını siler (masaüstü eklenti tekniği).
                 if (request.isForMainFrame() && "GET".equals(request.getMethod()) && preinjectSrc != null) {
-                    String host = url == null || url.getHost() == null ? "" : url.getHost().toLowerCase(Locale.ROOT);
                     if (host.endsWith("youtube.com") && !us.contains("/embed/")) {
                         WebResourceResponse rewritten = rewriteHtml(us);
                         if (rewritten != null) return rewritten;

@@ -1,5 +1,14 @@
 # Sürüm Geçmişi
 
+## v1.11 — 11 Ekim 2026
+**ABP topluluk listeleri entegre edildi.** Uygulama artık Adblock Plus'ın
+sürekli güncellenen listelerini doğrudan indiriyor (24 saat önbellek):
+turkish-filters+easylist, easyprivacy, fanboy-social/notifications,
+distraction-control, abp-filters-anti-cv. ||domain^ kurallarından domain
+kümesi çıkarılır; @@ istisnaları uygulanır; video altyapısı domainleri
+(googlevideo/youtube/ytimg...) koruma listesiyle asla engellenmez.
+Kullanılacak listeler rules.json'dan (filterLists) yapılandırılabilir.
+
 ## v1.10 — 11 Ekim 2026
 **Kurallar artık oturum içinde de 6 saatte bir tazeleniyor** (açılıştaki
 çekime ek olarak). Uzun gece oturumlarında da kural güncellemeleri

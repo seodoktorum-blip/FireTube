@@ -1,12 +1,26 @@
 {
-  "version": 1,
-  "not": "FireTube uzaktan kural dosyasi. Uygulama acilirken bunu ceker; YouTube reklam teslimatini degistiginde BU DOSYA guncellenir ve uygulama kendini iyilestirir (APK yeniden kurulmaz). adKeys: preinject deepPrune anahtarlari; blockPatterns: ag seviyesinde engellenecek URL desenleri (Java regex).",
+  "version": 2,
+  "not": "FireTube uzaktan kural dosyasi. Uygulama acilirken bunu ceker; YouTube reklam teslimatini degistiginde BU DOSYA guncellenir ve uygulama kendini iyilestirir (APK yeniden kurulmaz). adKeys: preinject deepPrune anahtarlari; blockPatterns: ag seviyesinde engellenecek URL desenleri (Java regex). filterLists: EasyList/ABP topluluk listeleri (uygulama indirir, ||domain^ kurallarini ayiklar; 24s onebellek).",
   "adKeys": [
-    "adPlacements", "adSlots", "adSlotRenderer", "adSlotMetadata",
-    "adBreakHeartbeatParams", "adParams", "adPods", "adSegments",
-    "adSurvey", "adTelemetry", "adSystemMetadata", "adCueRanges",
-    "adSlotsInfo", "adPlayers", "ssapConfig", "adBreakChart",
-    "adChunk", "adPlacementRenderer", "adMessage"
+    "adPlacements",
+    "adSlots",
+    "adSlotRenderer",
+    "adSlotMetadata",
+    "adBreakHeartbeatParams",
+    "adParams",
+    "adPods",
+    "adSegments",
+    "adSurvey",
+    "adTelemetry",
+    "adSystemMetadata",
+    "adCueRanges",
+    "adSlotsInfo",
+    "adPlayers",
+    "ssapConfig",
+    "adBreakChart",
+    "adChunk",
+    "adPlacementRenderer",
+    "adMessage"
   ],
   "blockPatterns": [
     "://[^/]*doubleclick\\.net/",
@@ -18,5 +32,13 @@
     "://[^/]*scorecardresearch\\.com/",
     "/pagead/",
     "/api/stats/ads"
+  ],
+  "filterLists": [
+    "https://easylist-downloads.adblockplus.org/v3/full/turkish-filters+easylist.txt",
+    "https://easylist-downloads.adblockplus.org/v3/full/distraction-control-free.txt",
+    "https://easylist-downloads.adblockplus.org/v3/full/fanboy-social.txt",
+    "https://easylist-downloads.adblockplus.org/v3/full/fanboy-notifications.txt",
+    "https://easylist-downloads.adblockplus.org/v3/full/easyprivacy.txt",
+    "https://easylist-downloads.adblockplus.org/v3/full/abp-filters-anti-cv.txt"
   ]
 }
