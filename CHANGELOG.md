@@ -1,5 +1,16 @@
 # Sürüm Geçmişi
 
+## v1.7 — 11 Ekim 2026
+**Siyah ekran kök çözümü (ağır yüzey onarımı).** 5 günlük saha verisi
+(1294 nabız ≈ 21 saat dinleme) çözümlemesi: gece MIUI video motorunu
+öldürüyor (5 gece / 5 kez), otomatik kurtarma çalışıyor ama ekran KAPALIYKEN
+kurulan yeni WebView çizim yüzeyini alamıyordu → uyanınca simsiyah ekran.
+Artık ekran açıldığında / uygulamaya dönüşte / kurtarma sonrasında:
+- WebView duraklat/destekle (compositor yüzeyi bırak-yeniden iste)
+- Görünüm ağacından sök/yeniden tak (Android Surface yeniden oluşur)
+- Görünürlük geçişi
+Ayrıca renderer ölümünde crash/kill ayrımı günlüğe yazılıyor.
+
 ## v1.6 — 6 Ekim 2026
 **uBlock seviyesinde derin reklam temizleme** (1-2 reklamın sızmaya devam
 etmesi üzerine):

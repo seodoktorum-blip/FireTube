@@ -289,7 +289,9 @@ public class MainActivity extends Activity {
              * etmeden kaldığı sayfaya geri döner. */
             @Override
             public boolean onRenderProcessGone(WebView view, android.webkit.RenderProcessGoneDetail detail) {
-                Log.e(TAG, "renderer öldü (crash=" + detail.didCrash() + ") — WebView yeniden kuruluyor");
+                boolean crashed = detail.didCrash();
+            appLog("RENDERER: öldü (crash=" + crashed + ") — yeniden kuruluyor");
+            Log.e(TAG, "renderer öldü (crash=" + crashed + ") — WebView yeniden kuruluyor");
                 MainActivity a = MainActivity.instance;
                 if (a != null) a.rebuildWebView("renderer-cokus");
                 return true;
@@ -362,6 +364,7 @@ public class MainActivity extends Activity {
             String url = lastUrl != null ? lastUrl : START_URL;
             createWebView();
             web.loadUrl(url);
+            kickWebViewSurface(); // ekranda siyah kalmasin: yeni yuzey garantilensin
         });
     }
 
@@ -567,16 +570,28 @@ public class MainActivity extends Activity {
     public void kickWebViewSurface() {
         runOnUiThread(() -> {
             if (web == null || isFinishing() || isDestroyed()) return;
+            // 1) AwContents'i duraklat/destekle: compositor yüzeyini bırakır/yeniden ister
+            try { web.onPause(); } catch (Exception ignored) {}
+            try { web.onResume(); } catch (Exception ignored) {}
+            // 2) Gorunum agacindan sokup tak: Android tarafinda Surface yeniden olusur
+            try {
+                ViewGroup parent = (ViewGroup) web.getParent();
+                if (parent != null) {
+                    ViewGroup.LayoutParams lp = web.getLayoutParams();
+                    int idx = parent.indexOfChild(web);
+                    parent.removeView(web);
+                    parent.addView(web, Math.max(idx, 0), lp);
+                }
+            } catch (Exception ignored) {}
+            // 3) Gorunurluk gecisi
             try {
                 web.setVisibility(View.INVISIBLE);
                 web.post(() -> {
-                    try {
-                        web.setVisibility(View.VISIBLE);
-                    } catch (Exception ignored) {
-                    }
+                    try { web.setVisibility(View.VISIBLE); } catch (Exception ignored) {}
                 });
-            } catch (Exception ignored) {
-            }
+            } catch (Exception ignored) {}
+            Log.d(TAG, "agir yuzey tekrmesi yapildi");
+            appLog("YUZEY: agir tekrme");
         });
     }
 
