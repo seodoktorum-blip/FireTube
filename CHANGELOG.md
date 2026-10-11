@@ -1,5 +1,12 @@
 # Sürüm Geçmişi
 
+## v1.12 — 11 Ekim 2026
+**uBlock Origin topluluk anahtarlarına abone olundu.** uAssets quick-fixes
+listesi (YouTube json-prune kurallarının toplulukça güncellendiği yer)
+uygulama tarafından 24 saatte bir çekilir; anahtarlar sayfaya gömülüp derin
+temizliğe eklenir. YouTube alan adı değiştirdiğinde uBlock topluluğu günler
+içinde listeyi günceller — bizim uygulama kendini otomatik iyileştirir.
+
 ## v1.11 — 11 Ekim 2026
 **ABP topluluk listeleri entegre edildi.** Uygulama artık Adblock Plus'ın
 sürekli güncellenen listelerini doğrudan indiriyor (24 saat önbellek):

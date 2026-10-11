@@ -87,6 +87,10 @@ public class MainActivity extends Activity {
     private volatile java.util.HashSet<String> adDomains = new java.util.HashSet<>();
     private volatile java.util.HashSet<String> excDomains = new java.util.HashSet<>();
     private volatile boolean listsReady = false;
+    // uBlock Origin topluluk anahtarlari (uAssets quick-fixes: youtube json-prune)
+    private volatile String uboKeysBoot = "";
+    private static final String UBO_QUICKFIX_URL =
+            "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/quick-fixes.txt";
 
     public static volatile MainActivity instance;
 
@@ -307,7 +311,62 @@ public class MainActivity extends Activity {
             appLog("LISTELER: " + okCount + "/" + urls.length + " ABP listesi aktif (" +
                     ads.size() + " domain, " + exc.size() + " istisna)");
             Log.d(TAG, "ABP listeleri hazir: " + ads.size() + " domain");
+            loadUboQuickFixes();
         }).start();
+    }
+
+    /* uBlock Origin'in gunluk guncellenen quick-fixes listesinden YouTube
+       json-prune anahtarlarini ayiklar: topluluk alan degistiginde burasi
+       bizi otomatik iyilestirir. */
+    private void loadUboQuickFixes() {
+        try {
+            File f = new File(getFilesDir(), "ubo-quickfixes.txt");
+            boolean fresh = f.exists() && System.currentTimeMillis() - f.lastModified() < 24L * 3600 * 1000;
+            if (!fresh) {
+                if (!downloadToFile(UBO_QUICKFIX_URL, f)) return;
+                //noinspection ResultOfMethodCallIgnored
+                f.setLastModified(System.currentTimeMillis());
+            }
+            java.util.LinkedHashSet<String> keys = new java.util.LinkedHashSet<>();
+            try (java.io.BufferedReader r = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(new java.io.FileInputStream(f), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = r.readLine()) != null) {
+                    int i = line.indexOf("+js(json-prune");
+                    if (i < 0) continue;
+                    if (line.indexOf("youtube") < 0 && line.indexOf("googlevideo") < 0) continue;
+                    int comma = line.indexOf(',', i);
+                    if (comma < 0) continue;
+                    int end = line.indexOf(',', comma + 1);
+                    if (end < 0) end = line.indexOf(')', comma);
+                    if (end < 0) end = line.length();
+                    String arg = line.substring(comma + 1, end);
+                    for (String tok : arg.split("\\s+")) {
+                        if (tok.isEmpty()) continue;
+                        // yalniz duz anahtarlar: parantez/kozeli ayracli yollar atlanir
+                        if (tok.indexOf('[') >= 0 || tok.indexOf('{') >= 0 || tok.indexOf('(') >= 0) continue;
+                        int dot = tok.lastIndexOf('.');
+                        if (dot >= 0) tok = tok.substring(dot + 1);
+                        if (tok.length() < 3) continue;
+                        if (!tok.matches("[A-Za-z0-9_$-]{3,40}")) continue;
+                        keys.add(tok);
+                    }
+                }
+            }
+            if (!keys.isEmpty()) {
+                StringBuilder sb = new StringBuilder("[");
+                for (String k : keys) {
+                    if (sb.length() > 1) sb.append(',');
+                    sb.append('"').append(k).append('"');
+                }
+                sb.append(']');
+                uboKeysBoot = sb.toString();
+                appLog("UBO: " + keys.size() + " topluluk anahtari alindi (quick-fixes)");
+                Log.d(TAG, "UBO anahtarlari: " + keys);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "UBO quick-fixes hatasi: " + e.getMessage());
+        }
     }
 
     private boolean downloadToFile(String urlStr, File dest) {
@@ -427,7 +486,8 @@ public class MainActivity extends Activity {
             if (gt < 0) return null;
             String rulesBoot = (remoteRulesJson != null
                     ? "window.__FIRE_RULES=" + remoteRulesJson + ";"
-                    : "");
+                    : "")
+                    + (uboKeysBoot.isEmpty() ? "" : "window.__FIRE_UBO_KEYS=" + uboKeysBoot + ";");
             html = html.substring(0, gt + 1) + "<script>" + rulesBoot + preinjectSrc + "</script>" + html.substring(gt + 1);
 
             WebResourceResponse res = new WebResourceResponse("text/html", "utf-8",

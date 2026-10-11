@@ -40,6 +40,14 @@
       say('kurallar uzaktan yüklendi (' + remote.length + ' anahtar)');
     }
   } catch (e) {}
+  // uBlock Origin topluluk anahtarlari (quick-fixes listesinden)
+  try {
+    var ubo = window.__FIRE_UBO_KEYS;
+    if (ubo && ubo.length) {
+      for (var ui = 0; ui < ubo.length; ui++) AD_KEYS[ubo[ui]] = 1;
+      say('uBlock topluluk anahtarları eklendi (' + ubo.length + ')');
+    }
+  } catch (e) {}
   if (!AD_KEYS.adPlacements) {
     AD_KEYS = {
       adPlacements: 1, adSlots: 1, adSlotRenderer: 1, adSlotMetadata: 1,
