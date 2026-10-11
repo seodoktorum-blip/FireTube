@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "not": "FireTube uzaktan kural dosyasi. Uygulama acilirken bunu ceker; YouTube reklam teslimatini degistiginde BU DOSYA guncellenir ve uygulama kendini iyilestirir (APK yeniden kurulmaz). adKeys: preinject deepPrune anahtarlari; blockPatterns: ag seviyesinde engellenecek URL desenleri (Java regex).",
+  "adKeys": [
+    "adPlacements", "adSlots", "adSlotRenderer", "adSlotMetadata",
+    "adBreakHeartbeatParams", "adParams", "adPods", "adSegments",
+    "adSurvey", "adTelemetry", "adSystemMetadata", "adCueRanges",
+    "adSlotsInfo", "adPlayers", "ssapConfig", "adBreakChart",
+    "adChunk", "adPlacementRenderer", "adMessage"
+  ],
+  "blockPatterns": [
+    "://[^/]*doubleclick\\.net/",
+    "://[^/]*googlesyndication\\.com/",
+    "://[^/]*googleadservices\\.com/",
+    "://[^/]*adservice\\.google\\.",
+    "://[^/]*adserver\\.",
+    "://[^/]*adsystem",
+    "://[^/]*scorecardresearch\\.com/",
+    "/pagead/",
+    "/api/stats/ads"
+  ]
+}
