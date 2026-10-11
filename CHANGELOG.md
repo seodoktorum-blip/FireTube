@@ -1,5 +1,12 @@
 # Sürüm Geçmişi
 
+## v1.9 — 11 Ekim 2026
+**adb ile anında filtre güncelleme.** Kural önceliği sürüm numarasına göre:
+adb ile itilen `rules.local.json` ↔ GitHub `rules.json` ↔ önbellek — en
+yüksek sürüm kazanır. Yeni `update-filters.bat`: telefon takılıyken tek
+komutla kuralları itip uygulamayı yeniden başlatır (`--reset` ile GitHub
+kaynağına döner).
+
 ## v1.8 — 11 Ekim 2026
 **ABP tarzı otomatik güncellenen kurallar (uzaktan kural sistemi).**
 Masaüstü reklam engelleyicilerin "hiç sızıntı olmamasının" sırrı günlük

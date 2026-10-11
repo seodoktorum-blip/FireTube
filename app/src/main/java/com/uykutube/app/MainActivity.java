@@ -158,35 +158,32 @@ public class MainActivity extends Activity {
         web.loadUrl(lastUrl);
     }
 
-    /* Kurallar: once obebellekten, hemen ardindan arka planda GitHub'tan tazele.
-       Basariliysa ag desenleri yeniden derlenir ve JSON sonraki sayfa yuklemesine gomulur. */
+    /* Kurallar: (1) adb ile itilen rules.local.json, (2) GitHub rules.json,
+       (3) onebellek — SURUM NUMARASI en yuksek olan kazanir. Boylece telefondayken
+       adb'den aninda guncelleme yapilabilir; GitHub daha yeni yayinlayinca otomatik
+       ona gecer. Ag desenleri yeniden derlenir ve kurallar sayfaya gomulur. */
     private void loadRules() {
         new Thread(() -> {
-            File cache = new File(getFilesDir(), "rules.json");
+            String localJson = readRulesFile("rules.local.json");   // adb ile itilen
+            String cacheJson = readRulesFile("rules.json");         // son basarili uzak
+
+            String remoteJson = null;
             try {
-                // 1) taze indir
                 java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(RULES_URL).openConnection();
                 c.setConnectTimeout(8000);
                 c.setReadTimeout(10000);
                 if (c.getResponseCode() == 200) {
-                    String body;
+                    java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
                     try (java.io.InputStream in = c.getInputStream()) {
-                        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
                         byte[] buf = new byte[8192];
                         int n;
                         while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
-                        body = new String(bos.toByteArray(), StandardCharsets.UTF_8);
                     }
                     c.disconnect();
+                    String body = new String(bos.toByteArray(), StandardCharsets.UTF_8);
                     if (body.contains("adKeys")) {
-                        try (java.io.FileOutputStream fo = new java.io.FileOutputStream(cache)) {
-                            fo.write(body.getBytes(StandardCharsets.UTF_8));
-                        }
-                        remoteRulesJson = body;
-                        applyBlockPatterns(body);
-                        appLog("KURALLAR: uzaktan yuklendi (v" + rulesVersion(body) + ")");
-                        Log.d(TAG, "uzak kurallar uygulandi");
-                        return;
+                        remoteJson = body;
+                        writeRulesFile("rules.json", body);
                     }
                 } else {
                     c.disconnect();
@@ -194,28 +191,47 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 Log.w(TAG, "uzak kural cekme hatasi: " + e.getMessage());
             }
-            // 2) yedek: obebellek
-            try {
-                if (cache.exists()) {
-                    String body = new String(java.nio.file.Files.readAllBytes(cache.toPath()), StandardCharsets.UTF_8);
-                    remoteRulesJson = body;
-                    applyBlockPatterns(body);
-                    appLog("KURALLAR: obebellekten yuklendi (v" + rulesVersion(body) + ")");
-                } else {
-                    appLog("KURALLAR: yerlesik varsayilanlar kullaniliyor");
-                }
-            } catch (Exception ignored) {
+
+            String best = null, src = "yerlesik";
+            int bestV = 0;
+            if (localJson != null && rulesVer(localJson) > bestV) { best = localJson; bestV = rulesVer(localJson); src = "adb yerel"; }
+            if (remoteJson != null && rulesVer(remoteJson) >= bestV) { best = remoteJson; bestV = rulesVer(remoteJson); src = "uzak (GitHub)"; }
+            if (best == null && cacheJson != null) { best = cacheJson; src = "onebellek"; }
+
+            if (best != null) {
+                remoteRulesJson = best;
+                applyBlockPatterns(best);
+                appLog("KURALLAR: " + src + " (v" + bestV + ")");
+            } else {
+                appLog("KURALLAR: yerlesik varsayilanlar");
             }
         }).start();
     }
 
-    private String rulesVersion(String json) {
+    private int rulesVer(String json) {
         try {
             java.util.regex.Matcher m = java.util.regex.Pattern.compile(
                     "\"version\"\\s*:\\s*(\\d+)").matcher(json);
-            return m.find() ? m.group(1) : "?";
+            return m.find() ? Integer.parseInt(m.group(1)) : 0;
         } catch (Exception e) {
-            return "?";
+            return 0;
+        }
+    }
+
+    private String readRulesFile(String name) {
+        try {
+            File f = new File(getFilesDir(), name);
+            if (!f.exists()) return null;
+            return new String(java.nio.file.Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void writeRulesFile(String name, String body) {
+        try (java.io.FileOutputStream fo = new java.io.FileOutputStream(new File(getFilesDir(), name))) {
+            fo.write(body.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception ignored) {
         }
     }
 
