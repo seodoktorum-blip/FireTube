@@ -1,5 +1,10 @@
 # Sürüm Geçmişi
 
+## v1.10 — 11 Ekim 2026
+**Kurallar artık oturum içinde de 6 saatte bir tazeleniyor** (açılıştaki
+çekime ek olarak). Uzun gece oturumlarında da kural güncellemeleri
+kendiliğinden alınır.
+
 ## v1.9 — 11 Ekim 2026
 **adb ile anında filtre güncelleme.** Kural önceliği sürüm numarasına göre:
 adb ile itilen `rules.local.json` ↔ GitHub `rules.json` ↔ önbellek — en

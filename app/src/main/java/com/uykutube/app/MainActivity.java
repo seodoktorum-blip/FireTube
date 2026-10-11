@@ -162,7 +162,7 @@ public class MainActivity extends Activity {
        (3) onebellek — SURUM NUMARASI en yuksek olan kazanir. Boylece telefondayken
        adb'den aninda guncelleme yapilabilir; GitHub daha yeni yayinlayinca otomatik
        ona gecer. Ag desenleri yeniden derlenir ve kurallar sayfaya gomulur. */
-    private void loadRules() {
+    public void loadRules() {
         new Thread(() -> {
             String localJson = readRulesFile("rules.local.json");   // adb ile itilen
             String cacheJson = readRulesFile("rules.json");         // son basarili uzak

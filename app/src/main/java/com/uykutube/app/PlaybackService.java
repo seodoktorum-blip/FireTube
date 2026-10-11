@@ -114,6 +114,11 @@ public class PlaybackService extends Service {
                     a.lastStatusAt = System.currentTimeMillis(); // döngüyü önle
                     a.rebuildWebView("durum-2dk-dir-gelmiyor");
                 }
+                // Kuralları 6 saatte bir tazele (uygulama açılışındaki çekimenin
+                // yanı sıra uzun gece oturumlarında da güncel kalsın).
+                if (tickCount > 0 && tickCount % 21600 == 0) {
+                    a.loadRules();
+                }
                 // Ekran açılma geçişinde WebView çizim yüzeyini tekmele (siyah ekran
                 // önlemi): onResume her durumda tetiklenmeyebilir, burada da izlenir.
                 PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
