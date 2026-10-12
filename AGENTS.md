@@ -1,4 +1,4 @@
-Şu an: Faz 8, adım 8.2 | Son yapılan: v1.14 kodlandı, 2 tur incelendi, telefonda doğrulandı, CHANGELOG/README | Sıradaki: kullanıcı elle denemeleri + commit/push onayı
+Şu an: v1.14 tamamlandı | Son yapılan: elle denemeler geçti (arama, kulaklık, kilit ekranı kartı, internet) | Sıradaki: yok (isteğe bağlı: bildirime dokunma, 25 dk ekran)
 
 # FireTube — plan
 
@@ -11,8 +11,8 @@ Testler: `:app:testDebugUnitTest` + `node app/src/test/js/preinject.test.js`
 
 # v1.14 — uyandırmama + kesintisiz gece + kontrol ✅ kodlandı (ayrıntı: docs/done-phases.md)
 Faz 5–7 özellikleri + 2 tur inceleme düzeltmeleri; derleme/testler geçti; v1.14 telefonda kurulu.
-- [ ] 8.2 Kullanıcının elle denemesi: gerçek arama (çalarken dur, bitince sür; sessiz kipte cevaplanınca dur), kulaklık/Bluetooth çıkarma, kilit ekranı medya kartı (+15 dk, Durdur, kalan süre), bildirime dokununca açılma, 25 dk ekran bırakma, internet kesip açma
-- [ ] 8.3 Commit + push (kullanıcı onayıyla; push seodoktorum-blip hesabıyla)
+- [x] 8.2 Kullanıcının elle denemesi: [x] gerçek arama (21:45 günlükte doğrulandı); [x] kulaklık çıkarma (kullanıcı denedi); [x] kilit ekranı kartı düğmeleri görünüyor (kullanıcı); [x] internet kesip açma (21:49 'AG: bağlantı yok' ×2, çalma sürdü); denenmedi (düşük risk): bildirime dokununca açılma, 25 dk ekran bırakma, uzun kesintide hata sayfası yeniden denemesi
+- [x] 8.3 Commit + push: faaeb74 (seodoktorum-blip hesabıyla)
 
 ## Açık işler
 - [ ] `./gradlew` ilk çalıştırmada Gradle 9.8.0 dağıtımını indirir (yerelde denenmedi)
