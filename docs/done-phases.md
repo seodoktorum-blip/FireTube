@@ -39,3 +39,13 @@ DevTools (adb forward → webview_devtools_remote_<pid>) ile sayfada JS çalış
 - Blur: input blur'u ulaşıyor, window blur yutuluyor, document.hidden=false.
 - Ekran kapalı 40 sn: çalmaya devam etti.
 - Testte bulunan ek hata düzeltildi: handleBufferStall duraklatılmış süreyi takılma sayıyordu (devamda sahte "akış takıldı — dürtülüyor"); 55 sn duraklat→devam ile doğrulandı.
+
+## v1.14 — Faz 5–8 (12 Eki 2026)
+Kaynak: docs/oneriler.md (A*/B*), gerçek v1.12 günlüğüyle önceliklendirildi.
+- Faz 5: A2 reklama anında tepki (medya olayları + MutationObserver + ratechange/volumechange); B1 kulaklık çıkınca duraklat (AUDIO_BECOMING_NOISY); YENİ telefon çalınca duraklat/bitince sürdür (AudioManager mod dinleyicisi, API<31 yoklama); A3 zamanlayıcı servis durunca silinmez; A1 servis başlarken lastStatusAt.
+- Faz 6: B6 kurtarma/yenilemede t= ile kaldığı saniye; A7 onReceivedError geri çekilmeli yeniden deneme + NetworkCallback + setNetworkAvailable; A6 günlük (ApplicationExitInfo, WebView sürümü, servis/ön script/fren/tick hataları, inject.js ayrı try'lar); A5 25 dk dokunulmazsa ekranı açık tutmayı bırak.
+- Faz 7: B3 "bu video bitince dur"; B5 son 60 sn ses kısma; B2 bildirim (aç, Oynat/Duraklat, +15 dk, Durdur, başlık/kanal/kalan süre) + MediaSession (CustomAction ile Android 13+ medya kartı).
+- Faz 8.1 inceleme: 1. tur 22 doğrulanmış bulgu (kök neden: duraklatma niyeti kalıcı değildi) → duraklatma kilidi modeli: JS userPause+holdPause+pauseOwner, Java holdPaused, ön script __uykuHoldBoot, cancelCallResume/callSeq, STOP yarışı, playing eşitleme, ekran bırakma düzeltmeleri, reklamda duraklatma koruması, lastContent, applyBootStart, kanal adı aria-label. 2. tur 5 bulgu: önyükleme devralma + isHold köprüsü, callCancelled koşulsuz, kendi pause'umuzu kullanıcı saymama, __uykuWake (geri tuşu), durum sorgusuyla hold kendini düzeltme.
+- Telefonda doğrulama sırasında bulunan: onPageFinished SPA geri gezinmede de geliyor → yedek duraklatma belge başına bir kez (__uykuHoldChecked); kilitli sayfada t= başlangıcının ilk oynatmada uygulanması.
+- Telefonda doğrulandı (Android 16): kara kutu CIKIS satırları; medya tuşu → MediaSession; çökmede t= ile devam; ses kısma; video sonu; bildirim yapısı/kanal adı; duraklatılmışken çökme → duraklatılmış kalır + devamda doğru saniye; gerçek dokunuşla iki video + kilitliyken geri tuşu → önceki video çalar.
+- Not: DevTools'tan programatik tıklamalarla oluşan geçmiş kayıtları Chromium'da "kullanıcı etkileşimsiz" sayılıp geri tuşunda atlanır — test ederken gerçek dokunuş (adb input tap) kullan.

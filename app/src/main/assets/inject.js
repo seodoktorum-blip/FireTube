@@ -8,6 +8,20 @@
   var q = function (s) { return document.querySelector(s); };
   var say = function (m) { try { if (window.FireTube) window.FireTube.log(m); } catch (e) {} };
 
+  // Her denetimin hatası bir kez günlüğe yazılır: tek try içinde bir denetimin
+  // hatası diğer bekçileri de sessizce susturuyordu.
+  var reported = {};
+  function reportError(name, e) {
+    var key = name + ':' + (e && e.message);
+    if (reported[key]) return;
+    reported[key] = 1;
+    say('HATA ' + name + ': ' + (e && e.message));
+  }
+  function run(name, fn) {
+    try { fn(); } catch (e) { reportError(name, e); }
+  }
+  if (!window.__firePre && /(^|\.)youtube\.com$/.test(location.hostname)) say('UYARI: ön script yok (sayfa yeniden yazılamadı) — reklam verisi temizlenmiyor');
+
   /* Ekran kapanınca Android sayfayı "gizli" işaretler ve YouTube oynatıcısı
      kendini duraklatır. Sayfaya her zaman görünür olduğunu söylüyoruz; böylece
      ekran kapalıyken de çalmaya devam eder. */
@@ -45,13 +59,98 @@
   var stallSince = 0;
   var stallRetries = 0;
   var lastUser = Date.now();
-  var userPause = false;
 
-  // Kullanıcıın son dokunuşu: sistem kaynaklı duraklamaları kullanıcı
-  // duraklatmasından ayırt etmek için takip ediliyor.
+  /* Duraklatma niyeti iki katmanlı:
+     - userPause: bizim bekçilerimiz (autoStart, handleStall, reklam) videoyu
+       kendiliğinden sürdürmez. Herhangi bir play olayında kalkar.
+     - holdPause: Android tarafının (zamanlayıcı, kulaklık, telefon, bildirim,
+       video sonu) ya da önceki sayfanın duraklatması: kullanıcı dokunuşu
+       olmadan gelen HER play (YouTube autoplay, sıradaki video) anında geri
+       duraklatılır. Kullanıcı dokunuşu / __uykuResume kaldırır.
+     userPause değişince Android'e bildirilir: sayfa yeniden yüklenirse
+     (kurtarma, yenileme) yeni sayfa duraklatılmış başlar. */
+  var userPause = false;
+  var holdPause = false;
+  var pauseOwner = null; // son duraklatmanın sahibi: 'telefon', 'zamanlayıcı', 'kullanıcı'...
+  var lastHoldLogAt = 0;
+  function setUserPause(on) {
+    if (userPause === on) return;
+    userPause = on;
+    try { if (window.FireTube) window.FireTube.onHold(on); } catch (e) {}
+  }
+  /* Duraklatılmış açılan sayfada YouTube adresteki t= başlangıcını kendi
+     (engellenen) otomatik başlatmasında uygular: devam edilince video 0'dan
+     başlıyordu. Başlangıç saklanır, ilk oynatmada o saniyeye atlanır. */
+  var bootStart = null;
+  try {
+    if (window.__uykuHoldBoot) {
+      var bu = new URL(location.href);
+      var bt = parseInt((bu.searchParams.get('t') || '').replace(/s$/, ''), 10);
+      if (bt > 0) bootStart = { vid: bu.searchParams.get('v'), t: bt };
+    }
+  } catch (e) {}
+  function applyBootStart(v) {
+    if (!bootStart || !v) return;
+    try {
+      var vid = new URL(location.href).searchParams.get('v');
+      if (vid === bootStart.vid && v.currentTime < bootStart.t - 5) v.currentTime = bootStart.t;
+    } catch (e) {}
+    bootStart = null;
+  }
+
+  // Önceki sayfadan devralınan duraklatma (ön script daha önce korumaya başladı)
+  // Dokunuş inject'ten önce geldiyse kilit (holdPause) kalkmıştır ama niyet
+  // (userPause) sürer; Java'nın güncel niyeti eşzamanlı sorulur (yükleme
+  // sırasında bildirimden "Oynat"a basılmış olabilir).
+  if (window.__uykuHoldBoot) {
+    var early = window.__uykuHoldEarly === true;
+    window.__uykuHoldEarly = false;
+    var javaHold = true;
+    try { if (window.FireTube && window.FireTube.isHold) javaHold = window.FireTube.isHold(); } catch (e) {}
+    var v0 = q('video');
+    if (!javaHold) {
+      say('önceki duraklatma bu arada kaldırılmış — kilit yok');
+    } else if (v0 && !v0.paused && !v0.ended) {
+      // kullanıcı inject gelmeden videoyu oynattı: niyet kalktı
+      try { if (window.FireTube) window.FireTube.onHold(false); } catch (e) {}
+    } else {
+      userPause = true;
+      holdPause = early;
+      pauseOwner = window.__uykuHoldOwner || 'önceki sayfa';
+      say('önceki duraklatma korunuyor (' + pauseOwner + (early ? '' : ', dokunuldu — kilit yok') + ')');
+    }
+  }
+
+  // Geri tuşu / geri hareketi sayfaya dokunuş olarak ulaşmaz: Android tarafı
+  // gezinmeden önce bunu çağırır (kullanıcı uyanık → kilit kalkar, niyet sürer)
+  window.__uykuWake = function () {
+    lastUser = Date.now();
+    holdPause = false;
+    window.__uykuHoldEarly = false;
+  };
+
+  // Kullanıcının son dokunuşu: sistem kaynaklı duraklamaları kullanıcı
+  // duraklatmasından ayırt etmek için takip ediliyor. Dokunuş = uyanık:
+  // duraklatma kilidi (holdPause) kalkar, userPause play'e kadar sürer.
   ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(function (ev) {
-    document.addEventListener(ev, function () { lastUser = Date.now(); }, { capture: true, passive: true });
+    document.addEventListener(ev, function () {
+      lastUser = Date.now();
+      holdPause = false;
+    }, { capture: true, passive: true });
   });
+
+  // Kilit açıkken dokunuşsuz play → hemen geri duraklat (diğer play
+  // dinleyicilerinden ÖNCE kaydedilir; Android'e "çalıyor" sinyali gitmesin)
+  document.addEventListener('play', function (e) {
+    if (!holdPause || !e.target || e.target.tagName !== 'VIDEO') return;
+    if (Date.now() - (window.__uykuUserPlayAt || 0) < 5000) { holdPause = false; return; }
+    try { e.target.pause(); } catch (x) {}
+    e.stopImmediatePropagation();
+    if (Date.now() - lastHoldLogAt > 60000) {
+      lastHoldLogAt = Date.now();
+      say('duraklatma korunuyor (' + pauseOwner + ') — kendiliğinden oynatma engellendi');
+    }
+  }, true);
 
   function notifyPlaying() {
     var v = q('video');
@@ -64,22 +163,126 @@
   // Dokunma olmadan gelen kullanıcı duraklatmaları: medya düğmeleri
   // (preinject'teki mediaSession sarmalayıcısı __uykuUserPauseAt'i işaretler)
   document.addEventListener('pause', function () {
+    // Kilit açıkken gelen pause bizimdir (__uykuPause / kilit dinleyicisi):
+    // dokunuş kilidi önceden kaldırdığı için gerçek kullanıcı duraklatması kaçmaz
+    if (holdPause) return;
     var now = Date.now();
     if (now - lastUser < 5000 || now - (window.__uykuUserPauseAt || 0) < 5000) {
-      userPause = true;
+      pauseOwner = 'kullanıcı';
+      setUserPause(true);
       say('kullanıcı duraklattı — otomatik devam kapalı');
     }
   }, true);
-  document.addEventListener('play', function () { userPause = false; }, true);
+  document.addEventListener('play', function (e) {
+    pauseOwner = null;
+    setUserPause(false);
+    if (e.target && e.target.tagName === 'VIDEO') {
+      // Java niyeti JS'ten ayrışmış olabilir (önyükleme): her gerçek play eşitler
+      try { if (window.FireTube) window.FireTube.onHold(false); } catch (x) {}
+      applyBootStart(e.target);
+    }
+  }, true);
 
-  /* Uyku zamanlayıcısı (PlaybackService) bunu çağırır: düz video.pause()
-     "sistem duraklatması" sanılıp autoStart/handleStall tarafından birkaç
-     saniyede geri alınıyordu. Kullanıcı duraklatması olarak işaretlenir. */
-  window.__uykuPause = function () {
-    userPause = true;
+  /* Android tarafı (zamanlayıcı, kulaklık çıkması, telefon, bildirim, video
+     sonu) bunu çağırır: düz video.pause() "sistem duraklatması" sanılıp
+     autoStart/handleStall tarafından birkaç saniyede geri alınıyordu.
+     Video o an çalmıyorsa bile (bitti / autoplay geçişi) kilit kurulur:
+     YouTube'un sıradaki play'i engellenir. Dönüş: video çalıyor ya da
+     sıradakine geçiyor muydu (telefon bitince sürdürülsün mü). */
+  window.__uykuPause = function (reason) {
+    reason = reason || 'zamanlayıcı';
     var v = q('video');
-    if (v && !v.paused) v.pause();
-    say('zamanlayıcı videoyu durdurdu — otomatik devam kapalı');
+    var wasPlaying = !!(v && !v.paused && !v.ended);
+    var inTransition = !!(v && !userPause && (v.ended || v.paused));
+    // Var olan bir kullanıcı/zamanlayıcı duraklatmasının sahibi değişmez
+    if (wasPlaying || inTransition || !userPause
+        || (pauseOwner === 'telefon' && reason !== 'telefon')) pauseOwner = reason;
+    holdPause = true;
+    setUserPause(true);
+    if (wasPlaying) v.pause();
+    restoreFade();
+    say(reason + ': video durduruldu — otomatik devam kapalı');
+    return wasPlaying || inTransition;
+  };
+
+  /* Arama bitince / bildirimden "Oynat" ile Android tarafı çağırır. Telefonun
+     sürdürmesi yalnız duraklatmanın sahibi hâlâ telefonsa yapılır: görüşme
+     sırasında zamanlayıcı dolduysa ya da kulaklık çıktıysa video durmuş kalır. */
+  window.__uykuResume = function (reason) {
+    if (reason === 'telefon bitti' && pauseOwner !== 'telefon') {
+      say('telefon bitti ama duraklatma artık ' + pauseOwner + ' — sürdürülmedi');
+      return false;
+    }
+    holdPause = false;
+    pauseOwner = null;
+    setUserPause(false);
+    var v = q('video');
+    if (!v || !v.paused || v.ended) return false;
+    var p = v.play();
+    if (p && p.catch) p.catch(function () {});
+    say((reason || 'devam') + ': video sürdürüldü');
+    return true;
+  };
+
+  /* Zamanlayıcının son 60 sn'si: ses yavaşça kısılır (f: 1→0). f>=1 ya da
+     duraklatma sesi eski düzeyine döndürür — mobil YouTube'da ses kaydırıcısı
+     yok, kısık kalırsa düzeltilemezdi. Telefonun sistem sesine dokunulmaz. */
+  var fadeBase = null;
+  function restoreFade() {
+    var v = q('video');
+    if (fadeBase !== null && v) v.volume = fadeBase;
+    fadeBase = null;
+  }
+  window.__uykuFade = function (f) {
+    var v = q('video');
+    if (!v) return;
+    if (f >= 1) { restoreFade(); return; }
+    if (adActive) return;
+    if (fadeBase === null) fadeBase = v.volume;
+    v.volume = Math.max(0, Math.min(1, fadeBase * f));
+  };
+
+  /* "Bu video bitince dur": Android tarafı açar (sayfa yenilense de yeniden
+     iter). Video bitmeye ~1 sn kala — autoplay sıradakine geçmeden —
+     duraklatılır. Canlı yayın (süre sonsuz) ve reklam hariç. */
+  var stopAtEnd = false;
+  window.__uykuStopAtEnd = function (on) { stopAtEnd = !!on; };
+  function finishStopAtEnd() {
+    stopAtEnd = false;
+    window.__uykuPause('video sonu');
+    try { if (window.FireTube) window.FireTube.onStopAtEndDone(); } catch (e) {}
+  }
+  function checkStopAtEnd() {
+    if (!stopAtEnd || adActive) return;
+    var v = q('video');
+    if (!v || v.paused) return;
+    var d = v.duration;
+    if (!isFinite(d) || d <= 0) return;
+    if (d - v.currentTime <= 1.2) finishStopAtEnd();
+  }
+  document.addEventListener('timeupdate', function (e) {
+    if (stopAtEnd && e.target && e.target.tagName === 'VIDEO') run('videosonu', checkStopAtEnd);
+  }, true);
+  document.addEventListener('ended', function (e) {
+    if (stopAtEnd && !adActive && e.target && e.target.tagName === 'VIDEO') run('videosonu', finishStopAtEnd);
+  }, true);
+
+  // Bildirim/kilit ekranı için başlık ve kanal (JSON metni)
+  // (kanal: sahip simgesinin aria-label'ı "Kanal Adı, 852 B abone. Kanala gidin.")
+  window.__uykuMeta = function () {
+    var channel = '';
+    var icon = q('a.slim-video-owner-icon');
+    var aria = icon && icon.getAttribute('aria-label');
+    if (aria) channel = aria.split(',')[0].trim();
+    if (!channel) {
+      var ch = q('.slim-video-information-channel-name, .slim-owner-channel-name');
+      channel = ch ? (ch.textContent || '').trim() : '';
+    }
+    return JSON.stringify({
+      title: (document.title || '').replace(/ - YouTube$/, ''),
+      channel: channel.slice(0, 80),
+      watch: location.pathname === '/watch',
+    });
   };
 
   function handleAd() {
@@ -102,6 +305,15 @@
       // Reklamı ağdan engelleyemediysek bile uyandırmasın: sessiz + 16x hız
       v.muted = true;
       try { if (v.playbackRate < 16) v.playbackRate = 16; } catch (e) {}
+      // Duraklatılmışken (telefon, zamanlayıcı, kulaklık...) atlama/sarma/kaçış
+      // yapılmaz, sayaçlar donar: yoksa 90 sn sonra "reklam takıldı" yenilemesi
+      // ya da atla tıklaması duraklatmayı silip videoyu başlatabiliyordu.
+      if (userPause && v.paused) {
+        adStartAt = Date.now();
+        adProgressAt = Date.now();
+        adLastPos = v.currentTime;
+        return;
+      }
       // En hızlı yol: reklamı İNDİRİLMİŞ verinin sonuna atla (veriyi beklemek
       // yok; 16x de arka planda sürer). 2 sn'de bir tekrarlanır, her seferinde
       // daha ileriye atlar. Tam sona atlamak kuyruk indirmeyi bekletiyordu.
@@ -155,6 +367,39 @@
       try { v.playbackRate = savedRate; } catch (e) {}
       say('reklam bitti — ses geri açıldı');
     }
+  }
+
+  /* Reklama ANINDA tepki: yalnız turlara (ekran kapalıyken saniyede bir)
+     güvenilirse sızan reklamın ilk saniyesi tam sesle çalabiliyordu (günlükte
+     gece 02-04 arası 4 sızıntı). Medya olayları ve oynatıcının sınıf değişimi
+     handleAd'i hemen çağırır; turlar yedek olarak kalır. */
+  function safeHandleAd() {
+    try { handleAd(); } catch (e) { reportError('handleAd', e); }
+  }
+  ['loadstart', 'loadedmetadata', 'durationchange', 'play', 'playing'].forEach(function (ev) {
+    document.addEventListener(ev, function (e) {
+      if (e.target && e.target.tagName === 'VIDEO') safeHandleAd();
+    }, true);
+  });
+  // Reklam sürerken oynatıcı hızı/sesi geri alırsa hemen yeniden uygula
+  // (yalnız değer farklıysa atanır: kendi atamamız olay döngüsü yaratmaz)
+  ['ratechange', 'volumechange'].forEach(function (ev) {
+    document.addEventListener(ev, function (e) {
+      var v = e.target;
+      if (!adActive || !v || v.tagName !== 'VIDEO') return;
+      if (!v.muted) v.muted = true;
+      try { if (v.playbackRate < 16) v.playbackRate = 16; } catch (x) {}
+    }, true);
+  });
+  var observedPlayer = null, playerObserver = null;
+  function observePlayer() {
+    if (typeof MutationObserver === 'undefined') return;
+    var p = q('#movie_player') || q('.html5-video-player');
+    if (!p || p === observedPlayer) return;
+    if (playerObserver) playerObserver.disconnect();
+    playerObserver = new MutationObserver(safeHandleAd);
+    playerObserver.observe(p, { attributes: true, attributeFilter: ['class'] });
+    observedPlayer = p;
   }
 
   function handleDialogs() {
@@ -258,10 +503,61 @@
     }
     times.push(now);
     try { sessionStorage.setItem('__uykuRL', JSON.stringify(times)); } catch (e) {}
-    say(reason);
-    setTimeout(function () { location.reload(); }, 1200);
+    var target = resumeUrl();
+    var go = function () {
+      if (target) location.replace(target); else location.reload();
+    };
+    // Ağ yokken yenilemek WebView'i hata sayfasında bırakıyordu: bağlantıyı bekle
+    // (navigator.onLine'ı Android tarafı ağ durumuna göre günceller)
+    if (navigator.onLine === false) {
+      say(reason + ' — ağ yok, bağlantı gelince yenilenecek');
+      window.addEventListener('online', function once() {
+        window.removeEventListener('online', once);
+        setTimeout(go, 1500);
+      });
+      return true;
+    }
+    say(reason + (target ? ' (kaldığı yerden: ' + target.replace(/.*[?&]t=/, 't=') + ')' : ''));
+    setTimeout(go, 1200);
     return true;
   }
+
+  /* Yenilemede kaldığın saniyeden devam: izleme geçmişi kapalıysa video
+     baştan başlıyordu (günlükte 43. dk → 4. dk). Shorts, canlı yayın ve
+     reklam sırasında (konum reklamın konumu) uygulanmaz. */
+  function resumeUrl() {
+    try {
+      var v = q('video');
+      if (location.pathname !== '/watch' || !v || v.ended) return null;
+      var u = new URL(location.href);
+      var t;
+      if (adActive) {
+        // Reklam sırasında v.currentTime reklamın konumu: reklamdan önceki son
+        // içerik konumu kullanılır (aynı video, 10 dk'dan taze)
+        if (lastContent.vid !== u.searchParams.get('v') || Date.now() - lastContent.at > 600000) return null;
+        t = Math.floor(lastContent.t) - 3;
+      } else {
+        if (!isFinite(v.duration) || v.duration <= 0) return null;
+        t = Math.floor(v.currentTime) - 3;
+      }
+      if (t < 10) return null;
+      u.searchParams.set('t', t + 's');
+      return u.toString();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Reklam dışı son içerik konumu (reklam kaçışı yenilemesinde kullanılır)
+  var lastContent = { vid: null, t: 0, at: 0 };
+  document.addEventListener('timeupdate', function (e) {
+    var v = e.target;
+    if (adActive || !v || v.tagName !== 'VIDEO' || location.pathname !== '/watch') return;
+    if (!isFinite(v.duration) || v.duration <= 0 || v.currentTime < 1) return;
+    try {
+      lastContent = { vid: new URL(location.href).searchParams.get('v'), t: v.currentTime, at: Date.now() };
+    } catch (x) {}
+  }, true);
 
   /* Akış takılması (ses gider, sonra bazen döner bazen dönmez): oynarken
      pozisyon ilerlemiyorsa önce küçük bir dürtme, düzelmezse sayfa yenileme. */
@@ -313,8 +609,11 @@
     var t = e.target;
     // kod 1 (aborted) zararsızdır; 2-4 (ağ/çözüme/kaynak) ölümcül
     if (t && t.tagName === 'VIDEO' && t.error && t.error.code !== 1) {
+      if (userPause) { say('video hatası kod=' + t.error.code + ' — duraklatılmış, yenilenmedi'); return; }
       say('video hatası kod=' + t.error.code + ' — 5 sn sonra sayfa yenilenecek');
-      setTimeout(function () { uykuReload('video hatası kod=' + t.error.code); }, 5000);
+      setTimeout(function () {
+        if (!userPause) uykuReload('video hatası kod=' + t.error.code);
+      }, 5000);
     }
   }, true);
 
@@ -336,22 +635,25 @@
     } catch (e) {}
   }
 
+  // Oynatma denetimleri: her biri ayrı korunur (biri hata verirse diğerleri sürer)
+  var CHECKS = [
+    ['sweep', sweepPlayerResponse], ['gozlemci', observePlayer], ['reklam', handleAd],
+    ['diyalog', handleDialogs], ['durma', handleStall], ['takilma', handleBufferStall],
+    ['otobaslat', autoStart], ['videosonu', checkStopAtEnd],
+  ];
+  function runChecks() {
+    for (var i = 0; i < CHECKS.length; i++) run(CHECKS[i][0], CHECKS[i][1]);
+  }
+
   function tickChecks() {
-    sweepPlayerResponse();
-    handleAd();
-    handleDialogs();
-    hideClutter();
-    hideOpenApp();
-    handleStall();
-    handleBufferStall();
-    autoStart();
+    runChecks();
+    run('clutter', hideClutter);
+    run('openapp', hideOpenApp);
   }
 
   /* Ekran kapalıyken tarayıcı zamanlayıcıları kısıtlanır; Android tarafı
      (PlaybackService) bu fonksiyonu saniyede bir doğrudan çağırır. */
-  window.__uykuTick = function () {
-    try { sweepPlayerResponse(); handleAd(); handleDialogs(); handleStall(); handleBufferStall(); autoStart(); } catch (e) {}
-  };
+  window.__uykuTick = runChecks;
 
   window.__uykuStatus = function () {
     var v = q('video');
@@ -364,9 +666,8 @@
         + ' sayfa=' + location.pathname.slice(0, 18);
   };
 
-  setInterval(function () {
-    try { tickChecks(); } catch (e) {}
-  }, 300);
+  setInterval(tickChecks, 300);
+  run('gozlemci', observePlayer);
 
   say('hazır');
 })();

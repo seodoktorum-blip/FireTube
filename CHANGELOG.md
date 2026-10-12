@@ -1,5 +1,35 @@
 # Sürüm Geçmişi
 
+## v1.14 — 12 Ekim 2026
+**Uyandırmama, kesintisiz gece ve kontrol.** (Öneriler gerçek gece günlüğüyle
+önceliklendirildi; iki tur çok ajanlı kod incelemesinden geçti.)
+- **Telefon çalınca video durur**, görüşme bitince kaldığı yerden sürer. İzin
+  gerekmez (Android ses modu izlenir). Görüşme sırasında zamanlayıcı dolar ya da
+  kulaklık çıkarsa video sürdürülmez. Sınır: telefon sessiz/titreşimdeyken video
+  zil sırasında değil, arama cevaplanınca durur.
+- **Kulaklık çıkınca / Bluetooth kopunca video durur** (ses hoparlöre geçmez).
+- **Sızan reklama anında tepki:** sessize alma/16x artık medya olayları ve
+  oynatıcı gözlemcisiyle hemen; önceden ekran kapalıyken 1 sn'ye kadar tam ses
+  çalabiliyordu (günlükte 9 gecede 4 sızıntı, hepsi 02-04 arası).
+- **Duraklatma artık kalıcı:** zamanlayıcı/kulaklık/telefon/bildirim/kullanıcı
+  duraklatması; YouTube autoplay'i, sıradaki video, sayfa yenilemesi ya da video
+  motoru kurtarması videoyu kendiliğinden yeniden başlatamaz (ön script yeni
+  sayfayı en baştan duraklatılmış açar). Dokunuş ya da Oynat kilidi kaldırır.
+- **Kaldığın yerden devam:** kurtarma ve yenilemelerde video baştan değil son
+  saniyeden sürer (günlükte 43. dk → 4. dk görülmüştü).
+- **Zamanlayıcı:** "Bu video bitince dur" seçeneği; son 60 sn ses yavaşça kısılır;
+  5 dk'dan uzun duraklatmada artık silinmez.
+- **Bildirim + kilit ekranı:** dokununca uygulama açılır; Oynat/Duraklat, +15 dk,
+  Durdur; başlık, kanal, kalan süre. Kulaklık tuşu FireTube'a gelir (MediaSession).
+- **İnternet kesintisi:** hata sayfasında kalmaz; 30/60/120/300 sn aralıkla ve
+  bağlantı gelince hemen yeniden dener; ağ yokken yenileme yapılmaz.
+- **Ekran:** kilitlemeden uyunursa 25 dk dokunulmadığında ekranı açık tutmayı
+  bırakır (ses sürer); dokununca/uygulamaya dönünce geri gelir.
+- **Kara kutu:** açılışta önceki kapanma nedenleri (ApplicationExitInfo) ve
+  WebView sürümü; servis/ön script/kurtarma freni/denetim hataları günlüğe.
+- Düzeltmeler: servis başlarken sahte KURTARMA; kurtarmada tam ekran sistem
+  çubukları; geri tuşuyla dönülen videonun kilitlenmemesi.
+
 ## v1.13 — 12 Ekim 2026
 **İnceleme düzeltmeleri.**
 - **Uyku zamanlayıcısı artık gerçekten durduruyor:** zamanlayıcının duraklatması

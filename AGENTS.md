@@ -1,28 +1,20 @@
-Şu an: İş tamamlandı | Son yapılan: tüm elle denemeler geçti (tam ekran, kilit ekranı, Google çıkış/giriş) | Sıradaki: yok
+Şu an: Faz 8, adım 8.2 | Son yapılan: v1.14 kodlandı, 2 tur incelendi, telefonda doğrulandı, CHANGELOG/README | Sıradaki: kullanıcı elle denemeleri + commit/push onayı
 
-# FireTube — inceleme bulgularını düzeltme planı (12 Eki 2026)
+# FireTube — plan
 
 Derleme: `tools/gradle-9.8.0/bin/gradle assembleRelease --offline -q` (ya da `./gradlew assembleRelease`)
 Testler: `:app:testDebugUnitTest` + `node app/src/test/js/preinject.test.js`
+Öneri kaynağı: docs/oneriler.md (A*/B* kodları oradan)
 
-## Faz 1 — Kritik mantık hataları ✅ (ayrıntı: docs/done-phases.md)
-Zamanlayıcı/medya duraklatması kalıcı, derin temizlik kapısız, kurallar ilk sayfaya eşzamanlı + canlı itme, rewriteHtml çerez/yönlendirme düzeltmesi.
+## v1.13 (Faz 1–4) ✅ (ayrıntı: docs/done-phases.md)
+İnceleme düzeltmeleri, AdFilter/AppLog/Rules/FilterParser, testler, wrapper; telefonda ve elle doğrulandı; 49f4190 push edildi.
 
-## Faz 2 — Güvenlik ve sağlamlık ✅ (ayrıntı: docs/done-phases.md)
-Kurallar doğrulanıyor, blur yutma daraltıldı, tam ekranda yüzey tekmesi yok, log sınırı + allowBackup=false, uBO anahtarları süzülüyor.
-
-## Faz 3 — Küçük düzeltmeler ✅ (ayrıntı: docs/done-phases.md)
-Sürüm seçimi, liste tazeleme/önbellek, ABP ayrıştırıcı sıkılaştırma (FilterParser.java), menü sürümü, README.
-
-## Faz 4 — Kod kalitesi ✅ (ayrıntı: docs/done-phases.md)
-AdFilter/AppLog ayrıldı, 17 JUnit + Node testi, Gradle wrapper, v1.13.
+# v1.14 — uyandırmama + kesintisiz gece + kontrol ✅ kodlandı (ayrıntı: docs/done-phases.md)
+Faz 5–7 özellikleri + 2 tur inceleme düzeltmeleri; derleme/testler geçti; v1.14 telefonda kurulu.
+- [ ] 8.2 Kullanıcının elle denemesi: gerçek arama (çalarken dur, bitince sür; sessiz kipte cevaplanınca dur), kulaklık/Bluetooth çıkarma, kilit ekranı medya kartı (+15 dk, Durdur, kalan süre), bildirime dokununca açılma, 25 dk ekran bırakma, internet kesip açma
+- [ ] 8.3 Commit + push (kullanıcı onayıyla; push seodoktorum-blip hesabıyla)
 
 ## Açık işler
-- [x] Telefonda doğrulama: soğuk açılış anahtarları, zamanlayıcı, blur, ekran kapalı çalma (ayrıntı: docs/done-phases.md)
-- [x] Tam ekran: kullanıcı telefonda denedi, sorun yok (12 Eki 2026)
-- [x] Kilit açılınca ekran: kullanıcı denedi, siyah kalmadı (12 Eki 2026)
-- [x] Google çıkış/giriş (yönlendirme+çerez yolu): kullanıcı denedi, sorun yok (12 Eki 2026)
-- [x] Commit + push: 49f4190 (seodoktorum-blip hesabıyla; makinedeki varsayılan git kimliği thecreepervibe ve yazma izni yok)
 - [ ] `./gradlew` ilk çalıştırmada Gradle 9.8.0 dağıtımını indirir (yerelde denenmedi)
-- Bilinen sınır: WebView'de sistem MediaSession yok; kulaklık düğmesi işaretlemesi yalnız YouTube mediaSession işleyicisi çağrılırsa çalışır
 - Bilinçli bırakılan: release `debuggable=true` (run-as günlük + update-filters.bat için)
+- Kapsam dışı (docs/oneriler.md): A8, A9, A10, A11, B4, B7 (A4 duraklatma kilidiyle büyük ölçüde çözüldü)

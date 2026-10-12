@@ -10,7 +10,7 @@ A minimal, ad-free YouTube player for people who fall asleep listening to videos
 
 - **Reklam engelleme (iki katman):**
   1. Ağ seviyesinde reklam/izleyici altyapısı engellenir (doubleclick, googlesyndication, pagead vb.).
-  2. Sızan reklam olursa oynatıcı seviyesinde yakalanır: **sesi anında kısılır, 16x hıza çekilir**, "Atla" düğmesine otomatik basılır. En kötü senaryoda bile reklam seni sesle uyandıramaz.
+  2. Sızan reklam olursa oynatıcı seviyesinde **anında** (medya olayları + oynatıcı gözlemcisi) yakalanır: **sesi kısılır, 16x hıza çekilir**, ileri sarılır, "Atla" düğmesine otomatik basılır. En kötü senaryoda bile reklam seni sesle uyandıramaz.
   - Reklamın *medya akışını* ağdan engellemek oynatıcıyı kilitlediği için bilinçli olarak **yapılmıyor** (denedik, simsiyah ekrandan ibaret kaldı 🙃).
 - **Ekran kapalıyken / kilit ekranında ses devam eder (gerçek cihazda test edildi):** Chromium WebView'in "pencere görünmez → medyayı duraklat" davranışı `KeepAliveWebView` ile devre dışı bırakılır; sayfaya her zaman görünür olduğu söylenir. Video oynarken bildirimde servis çalışır (partial wake lock + wifi lock). Ekran kapalıyken reklam/duraklama denetimi, sayfa zamanlayıcı kısıtlamasına takılmadığı için uygulama tarafından saniyede bir `__uykuTick` ile sürdürülür.
 - **Video kendiliğinden durmaz:** dokunma gerekliliği kaldırıldı; açılan video kendiliğinden başlar. "Devam etmek istiyor musun?" kutuları otomatik onaylanır. Sen dokunmadığın halde video durursa kendiliğinden devam ettirilir — ama **sen duraklattıysan dokunulmaz**.
@@ -20,9 +20,14 @@ A minimal, ad-free YouTube player for people who fall asleep listening to videos
   - Akış takılınca önce dürtülür, düzelmezse sayfa yenilenir.
   - **Döngü freni:** otomatik yenilemeler 10 dakikada en fazla 3 kez — yanlış tetikleme bile gece boyu kesinti yaratamaz.
 - **YouTube'un ayarlarına saygı:** autoplay'in kapalıysa video bitince durur; uygulama kendi başına sıradaki videoya **geçmez**.
-- **Uyku zamanlayıcı:** 🛡 rozetinden 15–120 dk seç, süre bitince video durur, ekran kapanabilir.
+- **Uyku zamanlayıcı:** 🛡 rozetinden 15–120 dk ya da **"Bu video bitince dur"** seç. Son 60 saniyede ses yavaşça kısılır, süre bitince video durur ve **durmuş kalır** (otomatik devam, autoplay ya da sayfa yenilenmesi geri başlatmaz).
+- **Uyandırmayan duraklatmalar:**
+  - **Telefon çalınca / görüşmede** video durur, görüşme bitince kaldığı yerden sürer (görüşme sırasında zamanlayıcı dolduysa ya da kulaklık çıktıysa sürmez). Not: telefon sessiz/titreşimdeyken zil sırasında Android ses modunu değiştirmediği için video ancak arama cevaplanınca durur.
+  - **Kulaklık çıkınca / Bluetooth kopunca** video durur (ses hoparlöre geçmez).
+- **Bildirim ve kilit ekranı kontrolü:** oynat/duraklat, **+15 dk**, **Durdur**; video başlığı, kanal ve kalan süre görünür. Kulaklık tuşu da çalışır (MediaSession).
+- **Kesintisiz gece:** kurtarma/yenilemede video **kaldığı saniyeden** sürer; internet kesilirse hata sayfasında kalmaz, bağlantı gelince yeniden dener. Kilitlemeden uyursan 25 dk dokunulmadığında ekranı açık tutmayı bırakır (ses sürer).
 - **Aşağı çek → yenile** (orijinal YouTube uygulamasındaki gibi), tam ekran video, geri tuşu ile gezinme, reklam sayacı.
-- **Kara kutu:** uygulama kendi günlüğünü `files/uyku.log`'a yazar (nabız + olaylar); logcat silinse bile gece olan biten incelenebilir.
+- **Kara kutu:** uygulama kendi günlüğünü `files/uyku.log`'a yazar (nabız + olaylar + açılışta önceki kapanma nedenleri ve WebView sürümü); logcat silinse bile gece olan biten incelenebilir.
 
 ## Kurulum (Android 8+)
 

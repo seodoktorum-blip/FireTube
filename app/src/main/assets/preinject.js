@@ -16,10 +16,11 @@
     if (ms && ms.setActionHandler) {
       var origSAH = ms.setActionHandler.bind(ms);
       ms.setActionHandler = function (action, handler) {
-        if ((action === 'pause' || action === 'stop') && typeof handler === 'function') {
+        if ((action === 'pause' || action === 'stop' || action === 'play') && typeof handler === 'function') {
           var h = handler;
+          var key = action === 'play' ? '__uykuUserPlayAt' : '__uykuUserPauseAt';
           handler = function () {
-            window.__uykuUserPauseAt = Date.now();
+            window[key] = Date.now();
             return h.apply(this, arguments);
           };
         }
@@ -27,6 +28,25 @@
       };
     }
   } catch (e) {}
+
+  /* Önceki sayfadan devralınan duraklatma: video duraklatılmışken sayfa
+     yeniden yüklenirse (kurtarma, yenileme) Android __uykuHoldBoot gömer.
+     inject.js sayfa yüklenince gelir — o zamana kadar YouTube autoplay'i
+     videoyu başlatırdı. Dokunuşsuz her play burada geri duraklatılır;
+     dokunuş (uyanık kullanıcı) korumayı kaldırır. */
+  if (window.__uykuHoldBoot) {
+    window.__uykuHoldEarly = true;
+    ['pointerdown', 'touchstart', 'keydown'].forEach(function (ev) {
+      document.addEventListener(ev, function () { window.__uykuHoldEarly = false; },
+          { capture: true, passive: true });
+    });
+    document.addEventListener('play', function (e) {
+      if (window.__uykuHoldEarly !== true || !e.target || e.target.tagName !== 'VIDEO') return;
+      try { e.target.pause(); } catch (x) {}
+      e.stopImmediatePropagation();
+    }, true);
+    say('önceki duraklatma: sayfa duraklatılmış açılıyor');
+  }
 
   /* Orijinal JSON.parse: hem sarmalayıcı hem yama aynı temele bassın */
   var origJSONParse = JSON.parse;

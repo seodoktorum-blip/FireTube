@@ -61,6 +61,25 @@ public class MainActivity extends Activity {
     private volatile String lastUrl = null;
     public volatile long lastStatusAt = 0L;
 
+    // kurtarmada kaldığı saniyeden devam (PlaybackService durum sorgusundan)
+    private volatile long lastPosSec = -1;
+    private volatile long lastPosAt = 0;
+    private volatile String lastPosUrl = null;
+
+    // kilitlemeden uyuyakalınırsa: 25 dk dokunulmazsa ekranı açık tutmayı bırak
+    private static final long SCREEN_HOLD_MS = 25 * 60 * 1000L;
+    private long lastTouchAt = System.currentTimeMillis();
+    volatile boolean videoPlaying = false;
+    private boolean screenReleased = false;
+
+    // internet kesintisi: ana sayfa yüklenemezse geri çekilmeli yeniden deneme
+    private static final int[] NET_RETRY_S = {30, 60, 120, 300};
+    private boolean mainFrameError = false;
+    private int netRetries = 0;
+    private String failedUrl = null;
+    private android.net.ConnectivityManager.NetworkCallback netCallback;
+    private long lastRewriteFailLogAt = 0;
+
     private View customView;
     private MyChromeClient chromeClient;
 
@@ -69,6 +88,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         instance = this;
+        logStartup();
         injectSrc = readAsset("inject.js");
         preinjectSrc = readAsset("preinject.js");
 
@@ -132,6 +152,7 @@ public class MainActivity extends Activity {
         filter.refreshLists();
 
         createWebView();
+        registerNetwork();
 
         if (savedInstanceState != null) {
             web.restoreState(savedInstanceState);
@@ -235,10 +256,17 @@ public class MainActivity extends Activity {
             int head = html.indexOf("<head");
             int gt = head >= 0 ? html.indexOf('>', head) : -1;
             if (gt < 0) return null;
-            html = html.substring(0, gt + 1) + "<script>" + filter.bootScript() + preinjectSrc + "</script>" + html.substring(gt + 1);
+            html = html.substring(0, gt + 1) + "<script>" + filter.bootScript() + holdBootScript()
+                    + preinjectSrc + "</script>" + html.substring(gt + 1);
             return htmlResponse(html);
         } catch (Exception e) {
             Log.w(TAG, "html yeniden yazma başarısız (" + e.getMessage() + ") — normal yükleme");
+            long now = System.currentTimeMillis();
+            if (now - lastRewriteFailLogAt > 60_000) {
+                lastRewriteFailLogAt = now;
+                appLog("UYARI: ön script eklenemedi (" + e.getClass().getSimpleName() + ": "
+                        + e.getMessage() + ") — sayfa ön scriptsiz açılıyor");
+            }
             return null;
         } finally {
             if (c != null) c.disconnect();
@@ -250,6 +278,7 @@ public class MainActivity extends Activity {
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     private void createWebView() {
         web = new KeepAliveWebView(this);
+        if (screenReleased) ((KeepAliveWebView) web).setHoldScreen(false);
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -314,12 +343,49 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                mainFrameError = false;
+            }
+
+            /* Ana sayfa yüklenemezse (gece modem yeniden başladı vb.) WebView hata
+               sayfasında kalıyordu: geri çekilmeli yeniden denenir, ağ gelince hemen. */
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request,
+                                        android.webkit.WebResourceError error) {
+                super.onReceivedError(view, request, error);
+                if (!request.isForMainFrame()) return;
+                mainFrameError = true;
+                failedUrl = request.getUrl().toString();
+                appLog("AG: sayfa yüklenemedi (" + error.getErrorCode() + " " + error.getDescription() + ")");
+                scheduleNetRetry();
+            }
+
+            @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 if (url != null && url.startsWith("http")) lastUrl = url;
                 if (swipe != null) swipe.setRefreshing(false);
                 positionChip(url);
+                if (mainFrameError) return; // hata sayfası: enjekte etme, yeniden deneme bekliyor
+                if (netRetries > 0) appLog("AG: sayfa yeniden yüklendi");
+                netRetries = 0;
+                bridgeHandler.removeCallbacks(netRetry);
                 if (injectSrc != null) view.evaluateJavascript(injectSrc, null);
+                // Önceki duraklatma (zamanlayıcı, telefon, kullanıcı...) yeni sayfada da
+                // geçerli: ön script gömülemediyse inject sonrası burada uygulanır
+                // Belge başına YALNIZ bir kez karar verilir: onPageFinished SPA içi geri
+                // gezinmede de geliyor; her seferinde uygulansa geri tuşuyla dönülen
+                // video yeniden kilitlenirdi.
+                view.evaluateJavascript("if(!window.__uykuHoldChecked){window.__uykuHoldChecked=1;"
+                        + (PlaybackService.isHoldPaused()
+                        ? "if(window.__uykuPause&&!window.__uykuHoldBoot)window.__uykuPause("
+                        + org.json.JSONObject.quote(PlaybackService.holdOwner()) + ");"
+                        : "") + "}", null);
+                // "video bitince dur" sayfa yenilense de geçerli kalsın
+                if (PlaybackService.isStopAtEnd()) {
+                    view.evaluateJavascript("window.__uykuStopAtEnd && window.__uykuStopAtEnd(true)", null);
+                }
             }
 
             @Override
@@ -335,8 +401,10 @@ public class MainActivity extends Activity {
             @Override
             public boolean onRenderProcessGone(WebView view, android.webkit.RenderProcessGoneDetail detail) {
                 boolean crashed = detail.didCrash();
-            appLog("RENDERER: öldü (crash=" + crashed + ") — yeniden kuruluyor");
-            Log.e(TAG, "renderer öldü (crash=" + crashed + ") — WebView yeniden kuruluyor");
+                // öncelik: 0 WAIVED (arka plan öldürmesi), 1 BOUND, 2 IMPORTANT
+                appLog("RENDERER: öldü (crash=" + crashed + ", öncelik="
+                        + detail.rendererPriorityAtExit() + ") — yeniden kuruluyor");
+                Log.e(TAG, "renderer öldü (crash=" + crashed + ") — WebView yeniden kuruluyor");
                 MainActivity a = MainActivity.instance;
                 if (a != null) a.rebuildWebView("renderer-cokus");
                 return true;
@@ -364,6 +432,7 @@ public class MainActivity extends Activity {
         long now = android.os.SystemClock.elapsedRealtime();
         if (now - lastRebuildAt < 120000) {
             Log.w(TAG, "kurtarma çok sık — atlandı: " + reason);
+            appLog("KURTARMA: çok sık — atlandı (" + reason + ")");
             return;
         }
         lastRebuildAt = now;
@@ -374,13 +443,24 @@ public class MainActivity extends Activity {
             if (customView != null) {
                 try { root.removeView(customView); } catch (Exception ignored) {}
                 customView = null;
+                // tam ekrandayken kurtarma: sistem çubukları gizli kalmasın
+                getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
             }
             try {
                 swipe.removeView(web);
                 web.loadUrl("about:blank");
                 web.destroy();
             } catch (Exception ignored) {}
-            String url = lastUrl != null ? lastUrl : START_URL;
+            // Eski sayfa "pause" olayı göndermeden yok ediliyor: çalmıyor say; yeni
+            // sayfa oynarsa onPlaying(true) bunu düzeltir, oynamazsa servis kapanır
+            videoPlaying = false;
+            PlaybackService.onPlayState(false);
+            bridgeHandler.removeCallbacks(delayedServiceStop);
+            bridgeHandler.postDelayed(delayedServiceStop, 5 * 60 * 1000L);
+            String url = resumeUrl(lastUrl != null ? lastUrl : START_URL);
+            if (url.contains("&t=") || url.contains("?t=")) {
+                appLog("KURTARMA: kaldığı yerden → " + url.replaceAll(".*[?&]t=", "t="));
+            }
             createWebView();
             web.loadUrl(url);
             kickWebViewSurface(); // ekranda siyah kalmasin: yeni yuzey garantilensin
@@ -430,16 +510,29 @@ public class MainActivity extends Activity {
     /* Video durunca servisi hemen değil 5 dakika sonra durdur: reklam
        geçişlerindeki kısa duraklamalarda gözcüler (yerel tick) ayakta kalsın. */
     private final android.os.Handler bridgeHandler = new android.os.Handler(android.os.Looper.getMainLooper());
-    private final Runnable delayedServiceStop = () -> PlaybackService.stop(MainActivity.this);
+    private final Runnable delayedServiceStop = new Runnable() {
+        @Override
+        public void run() {
+            // telefon görüşmesi sürerken kapatma: bitince video sürdürülecek
+            if (PlaybackService.holdingForCall()) {
+                bridgeHandler.postDelayed(this, 60_000L);
+                return;
+            }
+            PlaybackService.stop(MainActivity.this);
+        }
+    };
+    private final Runnable netRetry = this::retryAfterNetError;
 
     private class Bridge {
         @JavascriptInterface
         public void onPlaying(boolean playing) {
             runOnUiThread(() -> {
                 if (isFinishing() || isDestroyed()) return;
+                videoPlaying = playing;
+                PlaybackService.onPlayState(playing);
                 if (playing) {
                     bridgeHandler.removeCallbacks(delayedServiceStop);
-                    getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    if (!screenReleased) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                     askNotifPermissionOnce();
                     askBatteryOnce();
                     PlaybackService.start(MainActivity.this);
@@ -448,6 +541,28 @@ public class MainActivity extends Activity {
                     bridgeHandler.removeCallbacks(delayedServiceStop);
                     bridgeHandler.postDelayed(delayedServiceStop, 5 * 60 * 1000L);
                 }
+            });
+        }
+
+        /* Sayfadaki duraklatma niyeti (userPause) değişti: sayfa yeniden
+           yüklenirse yeni sayfa buna göre açılır. */
+        @JavascriptInterface
+        public void onHold(boolean on) {
+            PlaybackService.setHold(on);
+        }
+
+        // inject.js önyükleme kilidini devralırken Java'nın güncel niyetini sorar
+        @JavascriptInterface
+        public boolean isHold() {
+            return PlaybackService.isHoldPaused();
+        }
+
+        @JavascriptInterface
+        public void onStopAtEndDone() {
+            runOnUiThread(() -> {
+                PlaybackService.setStopAtEnd(false);
+                appLog("VIDEO SONU: video bitti — durduruldu");
+                updateChip();
             });
         }
 
@@ -514,10 +629,12 @@ public class MainActivity extends Activity {
 
     private void showMenu() {
         final long[] mins = {0, 15, 30, 45, 60, 90, 120};
+        final boolean sae = PlaybackService.isStopAtEnd();
         String[] items = new String[]{
                 "⏱ Zamanlayıcı: KAPALI",
                 "⏱ 15 dakika", "⏱ 30 dakika", "⏱ 45 dakika",
                 "⏱ 60 dakika", "⏱ 90 dakika", "⏱ 120 dakika",
+                sae ? "🎬 Video bitince dur: İPTAL" : "🎬 Bu video bitince dur",
                 "🏠 Ana sayfa",
                 "⟳ Yenile",
                 "🔋 Arka plan çalma izni (pil)",
@@ -531,13 +648,19 @@ public class MainActivity extends Activity {
                 .setTitle("FireTube v" + versionName)
                 .setItems(items, (d, which) -> {
                     if (which <= 6) {
+                        // tek kip: dakika seçimi (ya da KAPALI) "video sonu"nu iptal eder
+                        applyStopAtEnd(false);
                         PlaybackService.setTimer(mins[which]);
                         updateChip();
                     } else if (which == 7) {
-                        web.loadUrl(START_URL);
+                        if (!sae) PlaybackService.setTimer(0);
+                        applyStopAtEnd(!sae);
+                        updateChip();
                     } else if (which == 8) {
-                        web.reload();
+                        web.loadUrl(START_URL);
                     } else if (which == 9) {
+                        web.reload();
+                    } else if (which == 10) {
                         requestBatteryException();
                     }
                 })
@@ -567,6 +690,8 @@ public class MainActivity extends Activity {
         if (customView != null) {
             chromeClient.onHideCustomView();
         } else if (web.canGoBack()) {
+            // geri tuşu sayfaya dokunuş olarak ulaşmaz: kullanıcı uyanık, kilit kalksın
+            web.evaluateJavascript("window.__uykuWake && window.__uykuWake()", null);
             web.goBack();
         } else {
             super.onBackPressed();
@@ -624,6 +749,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        lastTouchAt = System.currentTimeMillis();
+        restoreScreenHold("uygulamaya dönüldü");
         web.resumeTimers();
         kickWebViewSurface();
     }
@@ -631,7 +758,19 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         instance = null;
+        // uygulama kapanınca zamanlayıcı/"video sonu" da biter (servis durunca bitmez)
+        PlaybackService.setTimer(0);
+        PlaybackService.setStopAtEnd(false);
+        PlaybackService.setHold(false);
         PlaybackService.stop(this);
+        bridgeHandler.removeCallbacksAndMessages(null);
+        if (netCallback != null) {
+            try {
+                ((android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE))
+                        .unregisterNetworkCallback(netCallback);
+            } catch (Exception ignored) {
+            }
+        }
         web.loadUrl("about:blank");
         web.destroy();
         super.onDestroy();
@@ -651,6 +790,224 @@ public class MainActivity extends Activity {
         @Override
         protected void onWindowVisibilityChanged(int visibility) {
             super.onWindowVisibilityChanged(View.VISIBLE);
+        }
+
+        /* Chromium video çalarken ekranı açık tutar (setKeepScreenOn). Uyuyakalınca
+           bırakılabilsin diye istek kaydedilir, holdScreen kapalıyken uygulanmaz. */
+        boolean holdScreen = true;
+        private boolean chromiumWantsOn = false;
+
+        @Override
+        public void setKeepScreenOn(boolean on) {
+            chromiumWantsOn = on;
+            super.setKeepScreenOn(on && holdScreen);
+        }
+
+        void setHoldScreen(boolean hold) {
+            holdScreen = hold;
+            super.setKeepScreenOn(chromiumWantsOn && hold);
+            if (!hold) enforceRelease();
+        }
+
+        // Chromium bayrağı bir alt görünüme (anchor) de koyabilir: her tikte temizlenir
+        void enforceRelease() {
+            if (holdScreen) return;
+            if (getKeepScreenOn()) super.setKeepScreenOn(false);
+            for (int i = 0; i < getChildCount(); i++) {
+                View c = getChildAt(i);
+                if (c.getKeepScreenOn()) c.setKeepScreenOn(false);
+            }
+        }
+    }
+
+    /* --- v1.14 yardımcıları --- */
+
+    void applyStopAtEnd(boolean on) {
+        PlaybackService.setStopAtEnd(on);
+        if (web != null) web.evaluateJavascript("window.__uykuStopAtEnd && window.__uykuStopAtEnd(" + on + ")", null);
+        if (on) appLog("VIDEO SONU: açıldı");
+    }
+
+    /* Video duraklatılmışken sayfa yeniden yüklenirse yeni sayfa duraklatılmış
+       açılsın: ön script YouTube'un autoplay'ini en baştan engeller. */
+    private String holdBootScript() {
+        if (!PlaybackService.isHoldPaused()) return "";
+        return "window.__uykuHoldBoot=1;window.__uykuHoldOwner="
+                + org.json.JSONObject.quote(PlaybackService.holdOwner()) + ";";
+    }
+
+    /* PlaybackService durum sorgusundan son konum (reklam/canlı hariç). */
+    void notePosition(long sec) {
+        lastPosSec = sec;
+        lastPosAt = System.currentTimeMillis();
+        lastPosUrl = lastUrl;
+    }
+
+    /* Kurtarmada kaldığı saniyeden devam: izleme geçmişi kapalıysa video baştan
+       başlıyordu (günlükte 43. dk → 4. dk). Yalnız aynı video ve taze konum. */
+    private String resumeUrl(String url) {
+        if (lastPosSec < 10 || System.currentTimeMillis() - lastPosAt > 3 * 60_000L) return url;
+        try {
+            Uri u = Uri.parse(url);
+            if (!"/watch".equals(u.getPath()) || lastPosUrl == null) return url;
+            String vid = u.getQueryParameter("v");
+            if (vid == null || !vid.equals(Uri.parse(lastPosUrl).getQueryParameter("v"))) return url;
+            Uri.Builder b = u.buildUpon().clearQuery();
+            for (String k : u.getQueryParameterNames()) {
+                if ("t".equals(k)) continue;
+                for (String v : u.getQueryParameters(k)) b.appendQueryParameter(k, v);
+            }
+            b.appendQueryParameter("t", (lastPosSec - 3) + "s");
+            return b.build().toString();
+        } catch (Exception e) {
+            return url;
+        }
+    }
+
+    @Override
+    public void onUserInteraction() {
+        super.onUserInteraction();
+        lastTouchAt = System.currentTimeMillis();
+        restoreScreenHold("dokunuldu");
+    }
+
+    private void restoreScreenHold(String why) {
+        if (!screenReleased) return;
+        screenReleased = false;
+        if (web instanceof KeepAliveWebView) ((KeepAliveWebView) web).setHoldScreen(true);
+        if (videoPlaying) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        appLog("EKRAN: " + why + " — açık tutma geri geldi");
+    }
+
+    /* PlaybackService her tikte çağırır. Video çalarken ekran açık tutulur; ama
+       kilitlemeden uyuyakalınınca bütün gece yanıyordu. 25 dk dokunulmazsa (tam
+       ekran hariç) açık tutma bırakılır, sistem zaman aşımı ekranı kapatır; ses sürer. */
+    void checkScreenHold() {
+        if (!(web instanceof KeepAliveWebView)) return;
+        KeepAliveWebView kw = (KeepAliveWebView) web;
+        if (screenReleased) {
+            if (kw.holdScreen) kw.setHoldScreen(false); // yeniden kurulmuş WebView
+            else kw.enforceRelease();
+            return;
+        }
+        if (!videoPlaying || customView != null) return;
+        // Ekran zaten kapalıysa bırakmanın faydası yok (kilit açılınca geri
+        // gelmesi de gerekmesin): yalnız ekran açıkken karar verilir
+        if (!((PowerManager) getSystemService(POWER_SERVICE)).isInteractive()) return;
+        if (System.currentTimeMillis() - lastTouchAt < SCREEN_HOLD_MS) return;
+        screenReleased = true;
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        kw.setHoldScreen(false);
+        appLog("EKRAN: " + (SCREEN_HOLD_MS / 60000) + " dk dokunulmadı — açık tutma bırakıldı");
+    }
+
+    private void scheduleNetRetry() {
+        bridgeHandler.removeCallbacks(netRetry);
+        if (netRetries >= 12) {
+            appLog("AG: yeniden deneme sınırı doldu (12)");
+            return;
+        }
+        int sec = NET_RETRY_S[Math.min(netRetries, NET_RETRY_S.length - 1)];
+        netRetries++;
+        bridgeHandler.postDelayed(netRetry, sec * 1000L);
+    }
+
+    private void retryAfterNetError() {
+        if (web == null || isDestroyed() || !mainFrameError) return;
+        String u = failedUrl != null ? failedUrl : (lastUrl != null ? lastUrl : START_URL);
+        appLog("AG: yeniden deneniyor (" + netRetries + ")");
+        web.loadUrl(u);
+    }
+
+    /* Ağ durumu: navigator.onLine'ı gerçeğe bağlar (inject.js ağ yokken
+       yenilemez) ve bağlantı gelince hata sayfasından hemen kurtarır. Ağ
+       değişimlerinde kısa kopmalar 3 sn ertelemeyle yutulur. */
+    private final Runnable netLost = () -> {
+        try {
+            android.net.ConnectivityManager cm =
+                    (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            if (cm.getActiveNetwork() != null) return; // bu arada başka ağa geçildi
+        } catch (Exception ignored) {
+        }
+        if (web != null) web.setNetworkAvailable(false);
+        appLog("AG: bağlantı yok");
+    };
+
+    private void registerNetwork() {
+        try {
+            android.net.ConnectivityManager cm =
+                    (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            netCallback = new android.net.ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(android.net.Network n) {
+                    runOnUiThread(() -> {
+                        bridgeHandler.removeCallbacks(netLost);
+                        if (web != null) web.setNetworkAvailable(true);
+                        if (mainFrameError) {
+                            appLog("AG: bağlantı geri geldi — hemen deneniyor");
+                            bridgeHandler.removeCallbacks(netRetry);
+                            bridgeHandler.postDelayed(netRetry, 2000);
+                        }
+                    });
+                }
+
+                @Override
+                public void onLost(android.net.Network n) {
+                    runOnUiThread(() -> {
+                        bridgeHandler.removeCallbacks(netLost);
+                        bridgeHandler.postDelayed(netLost, 3000);
+                    });
+                }
+            };
+            cm.registerDefaultNetworkCallback(netCallback);
+        } catch (Exception e) {
+            appLog("HATA: ağ dinleyicisi kurulamadı — " + e);
+        }
+    }
+
+    /* Kara kutu: açılışta sürüm bilgileri ve (Android 11+) sürecin önceki
+       kapanma nedenleri — MIUI öldürmesi mi, bellek mi, çökme mi? */
+    private static final String[] EXIT_REASONS = {
+            "BILINMIYOR", "KENDI_CIKTI", "SINYAL", "DUSUK_BELLEK", "COKME", "NATIVE_COKME",
+            "ANR", "BASLATMA_HATASI", "IZIN_DEGISTI", "ASIRI_KAYNAK", "KULLANICI_ISTEDI",
+            "KULLANICI_DURDURDU", "BAGIMLILIK_OLDU", "DIGER", "DONDURUCU", "PAKET_DURUMU",
+            "PAKET_GUNCELLENDI",
+    };
+
+    private void logStartup() {
+        String wv = "?", ver = "?";
+        try {
+            android.content.pm.PackageInfo p = WebView.getCurrentWebViewPackage();
+            if (p != null) wv = p.versionName;
+        } catch (Exception ignored) {
+        }
+        try {
+            ver = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception ignored) {
+        }
+        appLog("ACILIS: FireTube v" + ver + ", WebView " + wv + ", Android " + Build.VERSION.RELEASE);
+        if (Build.VERSION.SDK_INT < 30) return;
+        try {
+            android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
+            android.content.SharedPreferences sp = getSharedPreferences("firetube", MODE_PRIVATE);
+            long last = sp.getLong("lastExitTs", 0), newest = last;
+            java.util.List<android.app.ApplicationExitInfo> list =
+                    am.getHistoricalProcessExitReasons(getPackageName(), 0, 5);
+            java.text.SimpleDateFormat f = new java.text.SimpleDateFormat("MM-dd HH:mm:ss", Locale.ROOT);
+            for (int i = list.size() - 1; i >= 0; i--) { // eskiden yeniye
+                android.app.ApplicationExitInfo x = list.get(i);
+                if (x.getTimestamp() <= last) continue;
+                newest = Math.max(newest, x.getTimestamp());
+                int r = x.getReason();
+                String reason = r >= 0 && r < EXIT_REASONS.length ? EXIT_REASONS[r] : String.valueOf(r);
+                String desc = x.getDescription();
+                appLog("CIKIS: " + f.format(new java.util.Date(x.getTimestamp())) + " neden=" + reason
+                        + " önem=" + x.getImportance() + " pss=" + (x.getPss() / 1024) + "MB"
+                        + (desc != null ? " (" + desc + ")" : ""));
+            }
+            sp.edit().putLong("lastExitTs", newest).apply();
+        } catch (Exception e) {
+            appLog("HATA: çıkış nedenleri okunamadı — " + e);
         }
     }
 
