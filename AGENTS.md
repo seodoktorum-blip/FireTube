@@ -1,4 +1,4 @@
-Şu an: v1.14 tamamlandı | Son yapılan: elle denemeler geçti (arama, kulaklık, kilit ekranı kartı, internet) | Sıradaki: yok (isteğe bağlı: bildirime dokunma, 25 dk ekran)
+Şu an: v1.15 tamamlandı ve push edildi | Son yapılan: commit + push | Sıradaki: yok
 
 # FireTube — plan
 
@@ -13,6 +13,10 @@ Testler: `:app:testDebugUnitTest` + `node app/src/test/js/preinject.test.js`
 Faz 5–7 özellikleri + 2 tur inceleme düzeltmeleri; derleme/testler geçti; v1.14 telefonda kurulu.
 - [x] 8.2 Kullanıcının elle denemesi: [x] gerçek arama (21:45 günlükte doğrulandı); [x] kulaklık çıkarma (kullanıcı denedi); [x] kilit ekranı kartı düğmeleri görünüyor (kullanıcı); [x] internet kesip açma (21:49 'AG: bağlantı yok' ×2, çalma sürdü); denenmedi (düşük risk): bildirime dokununca açılma, 25 dk ekran bırakma, uzun kesintide hata sayfası yeniden denemesi
 - [x] 8.3 Commit + push: faaeb74 (seodoktorum-blip hesabıyla)
+
+# v1.15 — düşük kalite + SponsorBlock ✅ kodlandı (ayrıntı: docs/done-phases.md)
+Ekran kapalıyken/arka planda 144p (özgün ayar birebir geri), SponsorBlock (sha256 öneki); 21 JUnit + Node testi; telefonda doğrulandı; v1.15 kurulu.
+- [x] Commit + push (seodoktorum-blip hesabıyla)
 
 ## Açık işler
 - [ ] `./gradlew` ilk çalıştırmada Gradle 9.8.0 dağıtımını indirir (yerelde denenmedi)

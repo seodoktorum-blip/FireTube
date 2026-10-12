@@ -486,6 +486,7 @@ public class PlaybackService extends Service {
                 }
                 lastInteractive = interactive;
                 a.checkScreenHold();
+                a.updateQualityMode(); // ekran açılıp kapanınca kalite kipi
             } catch (Exception e) {
                 Log.w(TAG, "tick hatası: " + e.getMessage());
                 long now = System.currentTimeMillis();

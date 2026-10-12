@@ -80,6 +80,14 @@ public class MainActivity extends Activity {
     private android.net.ConnectivityManager.NetworkCallback netCallback;
     private long lastRewriteFailLogAt = 0;
 
+    // v1.15: kalıcı ayarlar (menüden aç/kapa), düşük kalite kipi, SponsorBlock
+    private android.content.SharedPreferences prefs;
+    private boolean prefLowQuality = true;
+    private boolean prefSponsor = true;
+    private boolean activityStarted = false;
+    private Boolean qualityLow = null; // sayfaya en son bildirilen kip
+    private final SponsorBlock sponsor = new SponsorBlock();
+
     private View customView;
     private MyChromeClient chromeClient;
 
@@ -89,6 +97,9 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         instance = this;
         logStartup();
+        prefs = getSharedPreferences("firetube", MODE_PRIVATE);
+        prefLowQuality = prefs.getBoolean("lowQuality", true);
+        prefSponsor = prefs.getBoolean("sponsorBlock", true);
         injectSrc = readAsset("inject.js");
         preinjectSrc = readAsset("preinject.js");
 
@@ -372,6 +383,9 @@ public class MainActivity extends Activity {
                 netRetries = 0;
                 bridgeHandler.removeCallbacks(netRetry);
                 if (injectSrc != null) view.evaluateJavascript(injectSrc, null);
+                // yeni sayfa kalite kipini bilmez: her yüklemede bildirilir
+                if (qualityLow == null) updateQualityMode();
+                else pushQualityMode();
                 // Önceki duraklatma (zamanlayıcı, telefon, kullanıcı...) yeni sayfada da
                 // geçerli: ön script gömülemediyse inject sonrası burada uygulanır
                 // Belge başına YALNIZ bir kez karar verilir: onPageFinished SPA içi geri
@@ -546,6 +560,19 @@ public class MainActivity extends Activity {
 
         /* Sayfadaki duraklatma niyeti (userPause) değişti: sayfa yeniden
            yüklenirse yeni sayfa buna göre açılır. */
+        /* Video değişti: SponsorBlock açıksa bölümler arka planda sorulur ve
+           sayfaya itilir (yalnız sayılar; kimlik doğrulanmış). */
+        @JavascriptInterface
+        public void onVideo(String videoId) {
+            if (!prefSponsor || !SponsorBlock.validId(videoId)) return;
+            sponsor.lookup(videoId, (id, segs) -> runOnUiThread(() -> {
+                if (web != null && !isDestroyed()) {
+                    web.evaluateJavascript("window.__uykuSegments && window.__uykuSegments("
+                            + org.json.JSONObject.quote(id) + "," + segs + ")", null);
+                }
+            }));
+        }
+
         @JavascriptInterface
         public void onHold(boolean on) {
             PlaybackService.setHold(on);
@@ -630,15 +657,46 @@ public class MainActivity extends Activity {
     private void showMenu() {
         final long[] mins = {0, 15, 30, 45, 60, 90, 120};
         final boolean sae = PlaybackService.isStopAtEnd();
-        String[] items = new String[]{
-                "⏱ Zamanlayıcı: KAPALI",
-                "⏱ 15 dakika", "⏱ 30 dakika", "⏱ 45 dakika",
-                "⏱ 60 dakika", "⏱ 90 dakika", "⏱ 120 dakika",
-                sae ? "🎬 Video bitince dur: İPTAL" : "🎬 Bu video bitince dur",
-                "🏠 Ana sayfa",
-                "⟳ Yenile",
-                "🔋 Arka plan çalma izni (pil)",
-        };
+        java.util.List<String> items = new java.util.ArrayList<>();
+        java.util.List<Runnable> acts = new java.util.ArrayList<>();
+        for (int k = 0; k < mins.length; k++) {
+            final long m = mins[k];
+            items.add(m == 0 ? "⏱ Zamanlayıcı: KAPALI" : "⏱ " + m + " dakika");
+            acts.add(() -> {
+                // tek kip: dakika seçimi (ya da KAPALI) "video sonu"nu iptal eder
+                applyStopAtEnd(false);
+                PlaybackService.setTimer(m);
+                updateChip();
+            });
+        }
+        items.add(sae ? "🎬 Video bitince dur: İPTAL" : "🎬 Bu video bitince dur");
+        acts.add(() -> {
+            if (!sae) PlaybackService.setTimer(0);
+            applyStopAtEnd(!sae);
+            updateChip();
+        });
+        items.add("📶 Ekran kapalıyken 144p: " + (prefLowQuality ? "AÇIK" : "KAPALI"));
+        acts.add(() -> {
+            prefLowQuality = !prefLowQuality;
+            prefs.edit().putBoolean("lowQuality", prefLowQuality).apply();
+            appLog("AYAR: ekran kapalıyken 144p " + (prefLowQuality ? "açık" : "kapalı"));
+            updateQualityMode();
+        });
+        items.add("⏭ SponsorBlock (sponsor atla): " + (prefSponsor ? "AÇIK" : "KAPALI"));
+        acts.add(() -> {
+            prefSponsor = !prefSponsor;
+            prefs.edit().putBoolean("sponsorBlock", prefSponsor).apply();
+            appLog("AYAR: SponsorBlock " + (prefSponsor ? "açık" : "kapalı"));
+            // kapanınca bölümler silinir; açılınca mevcut video yeniden sorulur
+            web.evaluateJavascript("window.__uykuSbReset && window.__uykuSbReset()", null);
+        });
+        items.add("🏠 Ana sayfa");
+        acts.add(() -> web.loadUrl(START_URL));
+        items.add("⟳ Yenile");
+        acts.add(() -> web.reload());
+        items.add("🔋 Arka plan çalma izni (pil)");
+        acts.add(this::requestBatteryException);
+
         String versionName = "?";
         try {
             versionName = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
@@ -646,24 +704,7 @@ public class MainActivity extends Activity {
         }
         new AlertDialog.Builder(this)
                 .setTitle("FireTube v" + versionName)
-                .setItems(items, (d, which) -> {
-                    if (which <= 6) {
-                        // tek kip: dakika seçimi (ya da KAPALI) "video sonu"nu iptal eder
-                        applyStopAtEnd(false);
-                        PlaybackService.setTimer(mins[which]);
-                        updateChip();
-                    } else if (which == 7) {
-                        if (!sae) PlaybackService.setTimer(0);
-                        applyStopAtEnd(!sae);
-                        updateChip();
-                    } else if (which == 8) {
-                        web.loadUrl(START_URL);
-                    } else if (which == 9) {
-                        web.reload();
-                    } else if (which == 10) {
-                        requestBatteryException();
-                    }
-                })
+                .setItems(items.toArray(new String[0]), (d, which) -> acts.get(which).run())
                 .setNegativeButton("Kapat", null)
                 .show();
     }
@@ -744,6 +785,44 @@ public class MainActivity extends Activity {
             Log.d(TAG, "agir yuzey tekrmesi yapildi");
             appLog("YUZEY: agir tekrme");
         });
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        activityStarted = true;
+        updateQualityMode();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        activityStarted = false;
+        updateQualityMode();
+    }
+
+    /* Ekran kapalı ya da uygulama arka plandayken en düşük kalite. Kilit
+       ekranı açıkken (ekran açık, kilit duruyor) eski kaliteye dönülür:
+       YouTube yeni kaliteye ~25-30 sn'de geçtiği için kilit açılırken hazır olsun.
+       Kip değişince sayfaya iletilir; PlaybackService her tikte çağırır. */
+    void updateQualityMode() {
+        boolean low = false;
+        if (prefLowQuality) {
+            boolean interactive = ((PowerManager) getSystemService(POWER_SERVICE)).isInteractive();
+            boolean locked = ((android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE)).isKeyguardLocked();
+            low = !interactive || (!activityStarted && !locked);
+        }
+        if (qualityLow != null && qualityLow == low) return;
+        boolean first = qualityLow == null;
+        qualityLow = low;
+        pushQualityMode();
+        if (!first || low) appLog("KALITE: " + (low ? "144p (ekran kapalı / arka plan)" : "eski ayar"));
+    }
+
+    private void pushQualityMode() {
+        if (web != null && qualityLow != null) {
+            web.evaluateJavascript("window.__uykuLowQuality && window.__uykuLowQuality(" + qualityLow + ")", null);
+        }
     }
 
     @Override

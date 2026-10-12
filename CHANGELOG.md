@@ -1,5 +1,18 @@
 # Sürüm Geçmişi
 
+## v1.15 — 12 Ekim 2026
+- **Ekran kapalıyken 144p:** ekran kapalıyken ya da uygulama arka plandayken
+  video en düşük kaliteye iner. Ölçüm: ekran kapalıyken de 360p video saniyede
+  ~30 kare çözülüyordu. Ekran açılınca (kilit ekranındayken, kilidi açmadan)
+  kullanıcının kalite ayarı birebir geri yazılır; YouTube bu seçimi kalıcı
+  sakladığı için özgün tercih ayrıca tutulur ve uygulama 144p'deyken öldürülse
+  de sonraki açılışta düzeltilir. Menüden aç/kapa.
+- **SponsorBlock:** sponsor, tanıtım ve "abone ol" bölümleri atlanır (yalnız
+  "atla" türü). Gizlilik dostu: yalnız sha256 öneki gönderilir; 50 videoluk
+  önbellek. Duraklatılmışken ve reklamda atlamaz; her bölüm bir kez. Menüden
+  aç/kapa.
+- Menü eylem listesine dönüştürüldü; ayarlar kalıcı.
+
 ## v1.14 — 12 Ekim 2026
 **Uyandırmama, kesintisiz gece ve kontrol.** (Öneriler gerçek gece günlüğüyle
 önceliklendirildi; iki tur çok ajanlı kod incelemesinden geçti.)

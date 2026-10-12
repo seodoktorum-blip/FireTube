@@ -268,6 +268,97 @@
   }, true);
 
   // Bildirim/kilit ekranı için başlık ve kanal (JSON metni)
+  /* Ekran kapalıyken / uygulama arka plandayken en düşük kalite (pil + veri):
+     ölçümde ekran kapalıyken de kareler çözülüyordu (~30 kare/sn, 360p).
+     YouTube kalite seçimini localStorage'a (yt-player-quality) KALICI yazar:
+     kullanıcının özgün tercihi __uykuQualPrev'de saklanır ve birebir geri
+     yazılır — uygulama ekran kapalıyken öldürülse de sonraki açılışta düzelir. */
+  var QUAL_NAMES = { 1080: 'hd1080', 720: 'hd720', 480: 'large', 360: 'medium', 240: 'small', 144: 'tiny' };
+  var lowQuality = false;
+  var qualModeKnown = false; // Android kipi bildirene kadar geri yükleme bekler
+  function player() { return q('#movie_player') || q('.html5-video-player'); }
+  function applyLowQuality() {
+    var p = player();
+    if (!p || !p.setPlaybackQualityRange || !p.getPlaybackQuality || adActive) return;
+    if (localStorage.getItem('__uykuQualPrev') === null) {
+      localStorage.setItem('__uykuQualPrev', localStorage.getItem('yt-player-quality') || 'null');
+    }
+    // oynatıcı yeni kaliteyi birkaç sn sonra raporlar: istek 10 sn'de bir yinelenir
+    if (p.getPlaybackQuality() !== 'tiny' && Date.now() - lowRequestedAt > 10000) {
+      lowRequestedAt = Date.now();
+      p.setPlaybackQualityRange('tiny', 'tiny');
+      say('kalite: 144p (ekran kapalı / arka plan)');
+    }
+  }
+  var lowRequestedAt = 0;
+  function restoreQuality() {
+    lowRequestedAt = 0; // bir sonraki düşürme hemen uygulanabilsin
+    var prev = localStorage.getItem('__uykuQualPrev');
+    if (prev === null) return;
+    var p = player();
+    if (!p || !p.setPlaybackQualityRange) return; // oynatıcı yok: kayıt kalır, sonra
+    var h = 0;
+    try { h = JSON.parse(JSON.parse(prev).data).quality || 0; } catch (e) {}
+    var name = QUAL_NAMES[h] || 'auto';
+    p.setPlaybackQualityRange(name, name);
+    if (prev === 'null') localStorage.removeItem('yt-player-quality');
+    else localStorage.setItem('yt-player-quality', prev);
+    localStorage.removeItem('__uykuQualPrev');
+    say('kalite: eski ayar geri yüklendi (' + (name === 'auto' ? 'otomatik' : name) + ')');
+  }
+  function checkQuality() {
+    if (!qualModeKnown) return;
+    if (lowQuality) applyLowQuality(); else restoreQuality();
+  }
+  window.__uykuLowQuality = function (on) {
+    lowQuality = !!on;
+    qualModeKnown = true;
+    run('kalite', checkQuality);
+  };
+
+  /* SponsorBlock: video değişince Android'e bildirilir; Android topluluk
+     veritabanından (gizlilik: yalnız video kimliğinin sha256 öneki gider)
+     sponsor / tanıtım / "abone ol" bölümlerini çekip __uykuSegments ile iter.
+     Bölüme gelince sonuna atlanır: duraklatılmışken ve reklamda değil, her
+     bölüm bir kez (kullanıcı geri sararsa yeniden atlanmaz). */
+  var sbVid = null, sbSegs = [], sbDone = {};
+  function currentVid() {
+    try { return location.pathname === '/watch' ? new URL(location.href).searchParams.get('v') : null; } catch (e) { return null; }
+  }
+  function checkSponsor() {
+    var vid = currentVid();
+    if (vid !== sbVid) {
+      sbVid = vid;
+      sbSegs = [];
+      sbDone = {};
+      if (vid) { try { if (window.FireTube) window.FireTube.onVideo(vid); } catch (e) {} }
+    }
+    if (!sbSegs.length || adActive || userPause) return;
+    var v = q('video');
+    if (!v || v.paused) return;
+    var t = v.currentTime;
+    for (var i = 0; i < sbSegs.length; i++) {
+      var s = sbSegs[i];
+      if (!sbDone[i] && t >= s[0] && t < s[1] - 0.5) {
+        sbDone[i] = 1;
+        v.currentTime = s[1];
+        say('SponsorBlock: ' + Math.round(s[1] - s[0]) + ' sn atlandı (' + Math.floor(s[0] / 60) + ':'
+            + ('0' + Math.floor(s[0] % 60)).slice(-2) + ')');
+      }
+    }
+  }
+  window.__uykuSegments = function (vid, segs) {
+    if (vid !== sbVid) return;
+    sbSegs = segs || [];
+    sbDone = {};
+    if (sbSegs.length) say('SponsorBlock: ' + sbSegs.length + ' bölüm bulundu');
+  };
+  // Android açıp kapatınca: kapanınca bölümler silinir, açılınca yeniden sorulur
+  window.__uykuSbReset = function () { sbVid = null; sbSegs = []; sbDone = {}; };
+  document.addEventListener('timeupdate', function (e) {
+    if (sbSegs.length && e.target && e.target.tagName === 'VIDEO') run('sponsor', checkSponsor);
+  }, true);
+
   // (kanal: sahip simgesinin aria-label'ı "Kanal Adı, 852 B abone. Kanala gidin.")
   window.__uykuMeta = function () {
     var channel = '';
@@ -640,6 +731,7 @@
     ['sweep', sweepPlayerResponse], ['gozlemci', observePlayer], ['reklam', handleAd],
     ['diyalog', handleDialogs], ['durma', handleStall], ['takilma', handleBufferStall],
     ['otobaslat', autoStart], ['videosonu', checkStopAtEnd],
+    ['kalite', checkQuality], ['sponsor', checkSponsor],
   ];
   function runChecks() {
     for (var i = 0; i < CHECKS.length; i++) run(CHECKS[i][0], CHECKS[i][1]);

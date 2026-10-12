@@ -25,6 +25,8 @@ A minimal, ad-free YouTube player for people who fall asleep listening to videos
   - **Telefon çalınca / görüşmede** video durur, görüşme bitince kaldığı yerden sürer (görüşme sırasında zamanlayıcı dolduysa ya da kulaklık çıktıysa sürmez). Not: telefon sessiz/titreşimdeyken zil sırasında Android ses modunu değiştirmediği için video ancak arama cevaplanınca durur.
   - **Kulaklık çıkınca / Bluetooth kopunca** video durur (ses hoparlöre geçmez).
 - **Bildirim ve kilit ekranı kontrolü:** oynat/duraklat, **+15 dk**, **Durdur**; video başlığı, kanal ve kalan süre görünür. Kulaklık tuşu da çalışır (MediaSession).
+- **Ekran kapalıyken 144p:** ekran kapalıyken ya da uygulama arka plandayken video en düşük kaliteye iner (ölçümde ekran kapalıyken de saniyede ~30 kare çözülüyordu): daha az pil ve veri, zayıf ağda daha az takılma. Ekran açılınca (kilidi açmadan) senin kalite ayarın birebir geri gelir. Menüden kapatılabilir.
+- **SponsorBlock:** videoya gömülü sponsor okumaları, tanıtımlar ve "abone ol" hatırlatmaları topluluk veritabanından (sponsor.ajay.app) bulunup atlanır. Gizlilik: sunucuya video kimliği değil yalnız özetinin ilk 4 karakteri gider. Menüden kapatılabilir.
 - **Kesintisiz gece:** kurtarma/yenilemede video **kaldığı saniyeden** sürer; internet kesilirse hata sayfasında kalmaz, bağlantı gelince yeniden dener. Kilitlemeden uyursan 25 dk dokunulmadığında ekranı açık tutmayı bırakır (ses sürer).
 - **Aşağı çek → yenile** (orijinal YouTube uygulamasındaki gibi), tam ekran video, geri tuşu ile gezinme, reklam sayacı.
 - **Kara kutu:** uygulama kendi günlüğünü `files/uyku.log`'a yazar (nabız + olaylar + açılışta önceki kapanma nedenleri ve WebView sürümü); logcat silinse bile gece olan biten incelenebilir.

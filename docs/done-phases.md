@@ -50,3 +50,10 @@ Kaynak: docs/oneriler.md (A*/B*), gerçek v1.12 günlüğüyle önceliklendirild
 - Telefonda doğrulandı (Android 16): kara kutu CIKIS satırları; medya tuşu → MediaSession; çökmede t= ile devam; ses kısma; video sonu; bildirim yapısı/kanal adı; duraklatılmışken çökme → duraklatılmış kalır + devamda doğru saniye; gerçek dokunuşla iki video + kilitliyken geri tuşu → önceki video çalar.
 - Not: DevTools'tan programatik tıklamalarla oluşan geçmiş kayıtları Chromium'da "kullanıcı etkileşimsiz" sayılıp geri tuşunda atlanır — test ederken gerçek dokunuş (adb input tap) kullan.
 - Kullanıcı elle denemeleri (12 Eki 21:45–21:50): arama → durdu/6 sn sonra sürdü (mod=1 zil=2); kulaklık → MediaSession + NOISY ikisi de duraklattı; HyperOS kilit ekranı kartında +15 dk/Durdur görünür ve çalışır; uçak modu → kopma algılandı, çalma sürdü.
+
+## v1.15 — Faz 9–11 (12 Eki 2026)
+- 9.1 Ölçüm (telefon): #movie_player kalite API'si mweb'de var (hd1080…tiny, auto); ekran kapalıyken kareler çözülüyor (20 sn'de 609 kare); tiny'ye geçiş ses kesmeden; seçim localStorage yt-player-quality'ye KALICI yazılıyor (quality:144 / 0=auto); auto'ya dönüş ~25-30 sn (aynı noktaya sarma tamponu boşaltmıyor).
+- 9.2 inject.js applyLowQuality/restoreQuality (__uykuQualPrev'de özgün değer, birebir geri yazma, 10 sn istek freni); MainActivity.updateQualityMode: düşük = ayar açık && (!ekran açık || (arka plan && kilit yok)); onStart/onStop/tick/onPageFinished.
+- 10 SponsorBlock.java (sha256 öneki, sponsor/selfpromo/interaction, actionType skip, ≥1 sn, sıralı, LRU 50) + 4 JUnit; inject.js checkSponsor (vid değişince onVideo köprüsü, __uykuSegments, segment başına bir kez, userPause/adActive iken yok); menü aç/kapa (SharedPreferences "firetube").
+- Telefonda doğrulandı: _2i-dhRl9wo 75–99 sn sponsor → "24 sn atlandı (1:15)"; ekran kapalı → 144p, ses sürdü; ekran açık (kilitli) → özgün ayar birebir geri; 144p'deyken zorla durdurma → açılışta ana sayfada bile düzeltildi.
+- Not: SponsorBlock'un Türkçe içerikte kapsamı düşük (ana sayfadaki 6 videonun hiçbirinde bölüm yoktu); veritabanında kaldırılmış eski videolar da var.
