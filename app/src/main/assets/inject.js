@@ -482,6 +482,34 @@
       try { if (v.playbackRate < 16) v.playbackRate = 16; } catch (x) {}
     }, true);
   });
+  /* Sessiz başlama: YouTube mobil sitesi, kullanıcı dokunuşu olmadan baştan
+     yüklenen izleme sayfasında videoyu SESSİZ başlatır (dokunuşla açılan
+     sesli, aynı sayfa yenilenince sessiz — telefonda doğrulandı). Uygulamanın
+     kendi yeniden yüklemeleri (renderer kurtarması, takılma/reklam/hata
+     yenilemesi, ağ yeniden denemesi, aşağı çek) bu yüzden gece sesi
+     kesiyordu. İzleme sayfasında video kullanıcı kısmadığı hâlde sessizse ses
+     açılır; reklam sırasında ve ana sayfa önizlemelerinde yapılmaz. */
+  var userMuted = false;
+  var lastUnmuteLogAt = 0;
+  document.addEventListener('volumechange', function (e) {
+    var v = e.target;
+    if (adActive || !v || v.tagName !== 'VIDEO') return;
+    if (!v.muted) userMuted = false;
+    else if (Date.now() - lastUser < 3000) userMuted = true; // YouTube'un sessiz düğmesine dokunuldu
+  }, true);
+  function checkAutoMuted() {
+    if (location.pathname !== '/watch' || adActive || userMuted) return;
+    var v = q('video');
+    if (!v || !v.muted || v.paused) return;
+    var p = player();
+    try { if (p && p.unMute) p.unMute(); } catch (e) {}
+    v.muted = false;
+    if (Date.now() - lastUnmuteLogAt > 60000) {
+      lastUnmuteLogAt = Date.now();
+      say('video sessiz başlamıştı (dokunuşsuz yükleme) — ses açıldı');
+    }
+  }
+
   var observedPlayer = null, playerObserver = null;
   function observePlayer() {
     if (typeof MutationObserver === 'undefined') return;
@@ -731,7 +759,7 @@
     ['sweep', sweepPlayerResponse], ['gozlemci', observePlayer], ['reklam', handleAd],
     ['diyalog', handleDialogs], ['durma', handleStall], ['takilma', handleBufferStall],
     ['otobaslat', autoStart], ['videosonu', checkStopAtEnd],
-    ['kalite', checkQuality], ['sponsor', checkSponsor],
+    ['kalite', checkQuality], ['sponsor', checkSponsor], ['sesac', checkAutoMuted],
   ];
   function runChecks() {
     for (var i = 0; i < CHECKS.length; i++) run(CHECKS[i][0], CHECKS[i][1]);

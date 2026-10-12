@@ -1,5 +1,26 @@
 # Sürüm Geçmişi
 
+## v1.16 — 12 Ekim 2026
+**Siyah ekran ve sessiz kurtarma — kök nedenleri bulundu.**
+- **Siyah ekran ("ekranı kapatıp yarım saat sonra açınca"):** gece MIUI video
+  motorunu öldürünce uygulama WebView'i yeniden kuruyordu; ses sürüyordu ama
+  yeni WebView hiç yerleştirilmiyordu (0x0). Neden: aşağı-çek kabı
+  (SwipeRefreshLayout) ilk çocuğunu bir kez kaydedip hep onu ölçüyor; eski
+  WebView sökülüp yenisi eklenince yenisi hiç ölçülmüyordu. Ekranın kapalı
+  olmasıyla ilgisi yoktu (ekran açıkken kurtarma da siyah bırakıyordu); v1.3 ve
+  v1.7'deki "yüzey tekmeleme" bu yüzden çözememişti. Artık WebView kalıcı bir
+  ara kapta; kurtarmada yalnız içi değişiyor. Telefonda yeniden üretildi ve
+  düzeltmesi doğrulandı.
+- **Kurtarmadan sonra sessiz çalma:** YouTube mobil sitesi dokunuşsuz baştan
+  yüklenen izleme sayfasında videoyu sessiz başlatıyor (dokunuşla açılan sesli,
+  aynı sayfa yenilenince sessiz). Uygulamanın tüm otomatik yenilemeleri
+  (renderer kurtarması, takılma/reklam/hata yenilemesi, ağ yeniden denemesi,
+  aşağı çek) bu yüzden geceleri sesi kesiyordu. Artık izleme sayfasında video,
+  kullanıcı kısmadığı hâlde sessizse ses açılıyor.
+- Teşhis: uygulama arka plandan dönünce WebView alanı piksel düzeyinde ölçülür;
+  siyahsa günlüğe "SIYAH-TEST" yazılır. Arka planda kalma süresi ve bellek
+  kırpmaları da günlükte (YASAM / BELLEK).
+
 ## v1.15 — 12 Ekim 2026
 - **Ekran kapalıyken 144p:** ekran kapalıyken ya da uygulama arka plandayken
   video en düşük kaliteye iner. Ölçüm: ekran kapalıyken de 360p video saniyede

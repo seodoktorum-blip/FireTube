@@ -57,3 +57,12 @@ Kaynak: docs/oneriler.md (A*/B*), gerçek v1.12 günlüğüyle önceliklendirild
 - 10 SponsorBlock.java (sha256 öneki, sponsor/selfpromo/interaction, actionType skip, ≥1 sn, sıralı, LRU 50) + 4 JUnit; inject.js checkSponsor (vid değişince onVideo köprüsü, __uykuSegments, segment başına bir kez, userPause/adActive iken yok); menü aç/kapa (SharedPreferences "firetube").
 - Telefonda doğrulandı: _2i-dhRl9wo 75–99 sn sponsor → "24 sn atlandı (1:15)"; ekran kapalı → 144p, ses sürdü; ekran açık (kilitli) → özgün ayar birebir geri; 144p'deyken zorla durdurma → açılışta ana sayfada bile düzeltildi.
 - Not: SponsorBlock'un Türkçe içerikte kapsamı düşük (ana sayfadaki 6 videonun hiçbirinde bölüm yoktu); veritabanında kaldırılmış eski videolar da var.
+
+## v1.16 — siyah ekran hata ayıklaması (12 Eki 2026, systematic-debugging)
+- Belirti (kullanıcı): ekran kapatılıp ~30 dk sonra açılınca çoğu zaman siyah ekran (eski sürümlerden beri; v1.3/v1.7 düzeltmeleri çözmemiş).
+- Teşhis eklendi: onStart/onStop (YASAM), onTrimMemory (BELLEK), PixelCopy ile WebView alanında parlak piksel oranı (SIYAH-TEST; YouTube koyu tema → ölçüt parlak piksel, eşik %0,2).
+- Deneme 1 (30 dk ekran kapalı, renderer ölmedi): yeniden üretilemedi — normal.
+- Hipotez 1 (ekran kapalıyken renderer ölümü → kurtarma): CDP Page.crash ile YENİDEN ÜRETİLDİ — ses sürüyor, WebView 0x0, ekran siyah. Ekran AÇIKKEN kurtarma da 0x0 → ekranla ilgisiz.
+- Kök neden: androidx SwipeRefreshLayout.ensureTarget() mTarget'ı bir kez kaydeder, removeView'da sıfırlamaz → kaldırılmış eski WebView ölçülür/yerleştirilir, yeni WebView hiç ölçülmez. Düzeltme: kalıcı FrameLayout kabı (webBox); doğrulandı (ekran açık/kapalı kurtarma → 375x745, görüntü normal).
+- Yan bulgu (görüntüde "sesi aç" simgesi): dokunuşsuz tam yüklemede YouTube mweb videoyu sessiz başlatıyor (dokunuşla SPA: muted=false; location.reload: muted=true). Programatik p.unMute() dokunuşsuz çalışıyor. inject.js checkAutoMuted: /watch, reklam değil, kullanıcı kısmamış (son 3 sn dokunuşla volumechange→muted), çalıyor → unMute. Doğrulandı: yükleme, yenileme, çökme kurtarması, aşağı çek.
+- Gerçek gece verisi: v1.12 günlüğündeki 7 renderer ölümünün her biri bu iki hatayı tetikliyordu (siyah ekran + büyük olasılıkla sessiz devam).

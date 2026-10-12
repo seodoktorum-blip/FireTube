@@ -52,6 +52,13 @@ public class MainActivity extends Activity {
     private FrameLayout root;
     private TextView chip;
     private SwipeRefreshLayout swipe;
+    /* WebView'in kalıcı kabı. SwipeRefreshLayout ilk çocuğunu (mTarget) bir kez
+       kaydeder ve hep onu ölçer/yerleştirir; WebView doğrudan çocuğu olunca
+       kurtarmada (rebuildWebView) eski WebView sökülüp yenisi eklendiğinde yeni
+       WebView hiç ölçülmüyor, 0x0 kalıyordu → ses sürer ama ekran simsiyah
+       ("ekranı kapatıp yarım saat sonra açınca siyah": gece renderer ölümü +
+       kurtarma). Kap hep aynı kalır, değişen yalnız içindeki WebView. */
+    private FrameLayout webBox;
     private final AtomicInteger blocked = new AtomicInteger();
     private String injectSrc;
     private String preinjectSrc;
@@ -116,6 +123,9 @@ public class MainActivity extends Activity {
             swipe.postDelayed(() -> swipe.setRefreshing(false), 4000);
         });
         swipe.setOnChildScrollUpCallback((parent, child) -> web.canScrollVertically(-1));
+        webBox = new FrameLayout(this);
+        swipe.addView(webBox, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         root.addView(swipe, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
@@ -429,7 +439,7 @@ public class MainActivity extends Activity {
         web.setWebChromeClient(chromeClient);
         web.addJavascriptInterface(new Bridge(), "FireTube");
         lastStatusAt = System.currentTimeMillis();
-        swipe.addView(web, new ViewGroup.LayoutParams(
+        webBox.addView(web, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
@@ -461,7 +471,7 @@ public class MainActivity extends Activity {
                 getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
             }
             try {
-                swipe.removeView(web);
+                webBox.removeView(web);
                 web.loadUrl("about:blank");
                 web.destroy();
             } catch (Exception ignored) {}
@@ -792,13 +802,93 @@ public class MainActivity extends Activity {
         super.onStart();
         activityStarted = true;
         updateQualityMode();
+        if (stoppedAt > 0) {
+            long away = android.os.SystemClock.elapsedRealtime() - stoppedAt;
+            appLog("YASAM: öne geldi (arka planda " + fmtDur(away) + ", bellek kırpma: " + trimSinceStop + ")");
+            checkBlankPending = true;
+        }
     }
 
     @Override
     protected void onStop() {
         super.onStop();
         activityStarted = false;
+        stoppedAt = android.os.SystemClock.elapsedRealtime();
+        trimSinceStop = "yok";
+        appLog("YASAM: arka plana geçti (ekran " + (((PowerManager) getSystemService(POWER_SERVICE))
+                .isInteractive() ? "açık" : "kapalı") + ")");
         updateQualityMode();
+    }
+
+    /* --- Siyah ekran teşhisi: davranışı değiştirmez, yalnız ölçer ve yazar ---
+       Uygulama arka plandan dönünce WebView alanının piksellerine bakılır
+       (PixelCopy): parlak piksel neredeyse yoksa "SİYAH" yazılır. YouTube koyu
+       tema olduğu için ölçüt siyah oranı değil, parlak (yazı/küçük resim)
+       piksel oranıdır. Bağlam: arka planda kalma süresi, bellek kırpmaları,
+       WebView ve sayfa durumu. */
+    private long stoppedAt = 0;
+    private String trimSinceStop = "yok";
+    private boolean checkBlankPending = false;
+
+    @Override
+    public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        trimSinceStop = trimSinceStop.equals("yok") ? String.valueOf(level) : trimSinceStop + "," + level;
+        appLog("BELLEK: kırpma seviyesi=" + level);
+    }
+
+    private static String fmtDur(long ms) {
+        long s = ms / 1000;
+        return s < 120 ? s + " sn" : (s / 60) + " dk";
+    }
+
+    private void checkBlank(String tag) {
+        if (Build.VERSION.SDK_INT < 26 || web == null || isDestroyed()) return;
+        if (customView != null) {
+            appLog("SIYAH-TEST " + tag + ": tam ekran — atlandı");
+            return;
+        }
+        int w = web.getWidth(), h = web.getHeight();
+        if (w < 100 || h < 400) {
+            appLog("SIYAH-TEST " + tag + ": WebView boyutu " + w + "x" + h + " — ölçülemedi");
+            return;
+        }
+        int[] loc = new int[2];
+        web.getLocationInWindow(loc);
+        // üst çeyrek atlanır: 🛡 rozeti (yerel görünüm) ölçümü bozmasın
+        android.graphics.Rect r = new android.graphics.Rect(loc[0], loc[1] + h / 4, loc[0] + w, loc[1] + h);
+        final android.graphics.Bitmap bmp = android.graphics.Bitmap.createBitmap(
+                Math.max(1, r.width() / 8), Math.max(1, r.height() / 8), android.graphics.Bitmap.Config.ARGB_8888);
+        final String state = "bağlı=" + web.isAttachedToWindow() + " görünür=" + (web.getVisibility() == View.VISIBLE)
+                + " boyut=" + w + "x" + h + " katman=" + web.getLayerType();
+        try {
+            android.view.PixelCopy.request(getWindow(), r, bmp, result -> {
+                if (result != android.view.PixelCopy.SUCCESS) {
+                    appLog("SIYAH-TEST " + tag + ": kopyalanamadı (kod " + result + ") | " + state);
+                    return;
+                }
+                int bright = 0, n = 0;
+                for (int y = 0; y < bmp.getHeight(); y++) {
+                    for (int x = 0; x < bmp.getWidth(); x++) {
+                        int c = bmp.getPixel(x, y);
+                        int l = (Color.red(c) * 299 + Color.green(c) * 587 + Color.blue(c) * 114) / 1000;
+                        if (l > 60) bright++;
+                        n++;
+                    }
+                }
+                double frac = n == 0 ? 0 : bright / (double) n;
+                final String verdict = frac < 0.002 ? "SİYAH" : "normal";
+                if (frac >= 0.002) return; // normal: günlüğe yazma
+                final String pct = String.format(Locale.ROOT, "%.2f%%", frac * 100);
+                // sayfa canlı mı? (renderer yanıt veriyor mu, video durumu)
+                web.evaluateJavascript("(window.__uykuStatus?window.__uykuStatus():'inject-yok')"
+                                + "+' vis='+document.visibilityState",
+                        v -> appLog("SIYAH-TEST " + tag + ": parlak=" + pct + " → " + verdict
+                                + " | " + state + " | sayfa: " + v));
+            }, new android.os.Handler(android.os.Looper.getMainLooper()));
+        } catch (Exception e) {
+            appLog("SIYAH-TEST " + tag + ": hata " + e);
+        }
     }
 
     /* Ekran kapalı ya da uygulama arka plandayken en düşük kalite. Kilit
@@ -832,6 +922,11 @@ public class MainActivity extends Activity {
         restoreScreenHold("uygulamaya dönüldü");
         web.resumeTimers();
         kickWebViewSurface();
+        if (checkBlankPending) {
+            checkBlankPending = false;
+            bridgeHandler.postDelayed(() -> checkBlank("+2 sn"), 2000);
+            bridgeHandler.postDelayed(() -> checkBlank("+15 sn"), 15000);
+        }
     }
 
     @Override

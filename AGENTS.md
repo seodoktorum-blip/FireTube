@@ -1,4 +1,4 @@
-Şu an: v1.15 tamamlandı ve push edildi | Son yapılan: commit + push | Sıradaki: yok
+Şu an: v1.16 push edildi | Son yapılan: commit + push | Sıradaki: kullanıcı gece kullanımı sonrası günlük kontrolü (SIYAH-TEST, sessiz başlama satırları)
 
 # FireTube — plan
 
@@ -17,6 +17,11 @@ Faz 5–7 özellikleri + 2 tur inceleme düzeltmeleri; derleme/testler geçti; v
 # v1.15 — düşük kalite + SponsorBlock ✅ kodlandı (ayrıntı: docs/done-phases.md)
 Ekran kapalıyken/arka planda 144p (özgün ayar birebir geri), SponsorBlock (sha256 öneki); 21 JUnit + Node testi; telefonda doğrulandı; v1.15 kurulu.
 - [x] Commit + push (seodoktorum-blip hesabıyla)
+
+# v1.16 — siyah ekran + sessiz kurtarma ✅ (ayrıntı: docs/done-phases.md)
+Kök neden 1: SwipeRefreshLayout eski WebView'i ölçüyordu (kurtarmada yeni WebView 0x0) → kalıcı kap. Kök neden 2: dokunuşsuz yüklemede YouTube sessiz başlatıyor → ses açma. Telefonda yeniden üretildi + doğrulandı.
+- [x] Commit + push (seodoktorum-blip hesabıyla)
+- [ ] Kullanıcı gerçek gecede doğrulasın (sabah günlükte SIYAH-TEST satırı olmamalı)
 
 ## Açık işler
 - [ ] `./gradlew` ilk çalıştırmada Gradle 9.8.0 dağıtımını indirir (yerelde denenmedi)
