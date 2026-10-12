@@ -21,9 +21,14 @@
     } catch (e) {}
     // Ekran kapanınca sayfa "blur" olayı da alır; YouTube bunu duraklatmak için
     // kullanabiliyor. visibilitychange dahil bu olayların sayfaya ulaşması engelleniyor.
+    // Yalnız pencere/belge düzeyindeki olaylar yutulur: yakalama aşamasında
+    // her şeyi yutmak input/arama kutusu gibi öğelerin blur'unu da öldürüyordu.
     ['visibilitychange', 'webkitvisibilitychange', 'blur', 'pagehide'].forEach(function (ev) {
-      window.addEventListener(ev, function (e) { e.stopImmediatePropagation(); }, true);
-      document.addEventListener(ev, function (e) { e.stopImmediatePropagation(); }, true);
+      var swallow = function (e) {
+        if (e.target === window || e.target === document) e.stopImmediatePropagation();
+      };
+      window.addEventListener(ev, swallow, true);
+      document.addEventListener(ev, swallow, true);
     });
   }
   spoofVisibility();
@@ -56,13 +61,26 @@
     document.addEventListener(ev, notifyPlaying, true);
   });
 
+  // Dokunma olmadan gelen kullanıcı duraklatmaları: medya düğmeleri
+  // (preinject'teki mediaSession sarmalayıcısı __uykuUserPauseAt'i işaretler)
   document.addEventListener('pause', function () {
-    if (Date.now() - lastUser < 5000) {
+    var now = Date.now();
+    if (now - lastUser < 5000 || now - (window.__uykuUserPauseAt || 0) < 5000) {
       userPause = true;
       say('kullanıcı duraklattı — otomatik devam kapalı');
     }
   }, true);
   document.addEventListener('play', function () { userPause = false; }, true);
+
+  /* Uyku zamanlayıcısı (PlaybackService) bunu çağırır: düz video.pause()
+     "sistem duraklatması" sanılıp autoStart/handleStall tarafından birkaç
+     saniyede geri alınıyordu. Kullanıcı duraklatması olarak işaretlenir. */
+  window.__uykuPause = function () {
+    userPause = true;
+    var v = q('video');
+    if (v && !v.paused) v.pause();
+    say('zamanlayıcı videoyu durdurdu — otomatik devam kapalı');
+  };
 
   function handleAd() {
     var p = q('#movie_player') || q('.html5-video-player');
@@ -119,7 +137,7 @@
       if (v.currentTime > adLastPos + 0.15) {
         adLastPos = v.currentTime;
         adProgressAt = Date.now();
-      } else if (v.paused) {
+      } else if (v.paused && !userPause) {
         var ap = v.play();
         if (ap && ap.catch) ap.catch(function () {});
       }
@@ -270,8 +288,14 @@
       lastAdvanceAt = Date.now();
       return;
     }
+    // Duraklatılmış/reklamdaki süre takılma sayılmaz: sayaç burada tazelenir,
+    // yoksa uzun bir duraklatmadan sonra devam edince hemen "takıldı" sanılıyordu.
+    if (v.paused || adActive || userPause) {
+      lastPos = pos;
+      lastAdvanceAt = Date.now();
+      return;
+    }
     var stuckMs = Date.now() - lastAdvanceAt;
-    if (v.paused || adActive || userPause) return;
     if (stuckMs > 45000 && Date.now() - lastNudgeAt > 30000) {
       lastNudgeAt = Date.now();
       say('akış takıldı (' + Math.round(stuckMs / 1000) + ' sn) — dürtülüyor');

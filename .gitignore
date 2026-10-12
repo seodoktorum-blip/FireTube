@@ -12,8 +12,8 @@ captures/
 .cxx/
 
 # Bu depoda Gradle dağıtımı yerel olarak tools/ altında tutuluyor
-# (~130 MB) — GitHub'a girmemesi için dışlandı. Derlemek için kendi
-# Gradle'ınızı (9.x) veya Android Studio'yu kullanın.
+# (~130 MB) — GitHub'a girmemesi için dışlandı. Derlemek için
+# ./gradlew (wrapper) ya da Android Studio'yu kullanın.
 tools/
 
 # İşletim sistemi / editör kalıntıları

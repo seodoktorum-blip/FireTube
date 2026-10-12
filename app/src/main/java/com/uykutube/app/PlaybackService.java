@@ -45,8 +45,7 @@ public class PlaybackService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(TAG, "oynatma servisi başladı");
-        MainActivity a = MainActivity.instance;
-        if (a != null) a.appLog("SERVIS: başladı");
+        AppLog.write(this, "SERVIS: başladı");
         startFg();
         h.removeCallbacks(tick);
         h.postDelayed(tick, 1000);
@@ -103,8 +102,7 @@ public class PlaybackService extends Service {
                                 if (ma != null) ma.lastStatusAt = System.currentTimeMillis();
                                 Log.d(TAG, "durum: " + v);
                                 if (heartbeat && v != null) {
-                                    String s = v.replace("\"", "");
-                                    if (ma != null) ma.appLog("NABIZ: " + s);
+                                    AppLog.write(PlaybackService.this, "NABIZ: " + v.replace("\"", ""));
                                 }
                             });
                 }
@@ -117,8 +115,8 @@ public class PlaybackService extends Service {
                 // Kuralları 6 saatte bir tazele (uygulama açılışındaki çekimenin
                 // yanı sıra uzun gece oturumlarında da güncel kalsın).
                 if (tickCount > 0 && tickCount % 21600 == 0) {
-                    a.loadRules();
-                    a.loadFilterLists();
+                    a.filter.refreshRules();
+                    a.filter.refreshLists();
                 }
                 // Ekran açılma geçişinde WebView çizim yüzeyini tekmele (siyah ekran
                 // önlemi): onResume her durumda tetiklenmeyebilir, burada da izlenir.
@@ -137,7 +135,8 @@ public class PlaybackService extends Service {
             if (System.currentTimeMillis() >= timerEndAt) {
                 timerEndAt = 0;
                 if (a != null && a.web != null) {
-                    a.web.evaluateJavascript("document.querySelector('video')?.pause()", null);
+                    a.web.evaluateJavascript("window.__uykuPause ? window.__uykuPause()"
+                            + " : document.querySelector('video')?.pause()", null);
                 }
             }
             if (a != null) a.updateChip();
@@ -178,11 +177,9 @@ public class PlaybackService extends Service {
         h.removeCallbacks(tick);
         if (wl != null && wl.isHeld()) wl.release();
         if (wifiLock != null && wifiLock.isHeld()) wifiLock.release();
+        AppLog.write(this, "SERVIS: durdu");
         MainActivity a = MainActivity.instance;
-        if (a != null) {
-            a.appLog("SERVIS: durdu");
-            a.updateChip();
-        }
+        if (a != null) a.updateChip();
         super.onDestroy();
     }
 

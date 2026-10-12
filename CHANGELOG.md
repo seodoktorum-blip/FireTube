@@ -1,5 +1,29 @@
 # Sürüm Geçmişi
 
+## v1.13 — 12 Ekim 2026
+**İnceleme düzeltmeleri.**
+- **Uyku zamanlayıcısı artık gerçekten durduruyor:** zamanlayıcının duraklatması
+  "sistem duraklatması" sanılıp birkaç saniyede otomatik devam ettiriliyordu.
+  Artık kullanıcı duraklatması sayılıyor; medya düğmeleriyle duraklatma da öyle.
+- **Derin temizlik her zaman çalışıyor:** yalnız üst düzeyde bilinen alan varsa
+  devreye giriyordu; artık yanıtta herhangi bir reklam anahtarı geçiyorsa tüm
+  derinlikler temizleniyor (rules.json ve uBlock anahtarları gerçekten etkili).
+- **Kurallar ilk sayfaya yetişiyor:** diskteki kurallar açılışta eşzamanlı
+  yükleniyor; uzaktan gelen güncellemeler açık sayfaya anında itiliyor.
+- **Oturum çerezleri korunuyor:** ana belge yanıtındaki Set-Cookie'ler artık
+  kaydediliyor; yönlendirmeler yanlış adres altında sunulmuyor.
+- **Güvenlik:** rules.json JSON olarak doğrulanıyor, sayfaya yalnız temiz
+  anahtar dizisi gömülüyor; bozuk dosya önbelleğe yazılmıyor. allowBackup kapalı.
+- **ABP ayrıştırıcı:** yol içeren ve siteye özgü kurallar artık bütün domaini
+  engellemiyor; listeden çıkan domainler tazelemede kalkıyor.
+- **Duraklatma sonrası sahte "akış takıldı":** duraklatılmış geçen süre takılma
+  sayılıyordu; uzun duraklatmadan sonra devam edince video gereksizce
+  dürtülüyordu (telefonda testte bulundu).
+- Arama kutusu gibi öğelerin blur olayları artık yutulmuyor; tam ekranda
+  yüzey tekmesi yapılmıyor.
+- Kod: AdFilter / AppLog / Rules / FilterParser sınıflarına bölündü; birim
+  testleri (JUnit + Node) ve Gradle wrapper eklendi.
+
 ## v1.12 — 11 Ekim 2026
 **uBlock Origin topluluk anahtarlarına abone olundu.** uAssets quick-fixes
 listesi (YouTube json-prune kurallarının toplulukça güncellendiği yer)

@@ -27,8 +27,15 @@ A minimal, ad-free YouTube player for people who fall asleep listening to videos
 ## Kurulum (Android 8+)
 
 ```
-gradle assembleRelease        # Gradle 9.x — veya Android Studio ile açıp Run
+./gradlew assembleRelease     # Gradle wrapper (9.8.0) — veya Android Studio ile açıp Run
 adb install -r app/build/outputs/apk/release/app-release.apk
+```
+
+Testler:
+
+```
+./gradlew :app:testDebugUnitTest      # kural/filtre ayrıştırıcıları (JUnit)
+node app/src/test/js/preinject.test.js # ön script reklam temizliği (Node)
 ```
 
 Çıktı debug anahtarıyla imzalanır (kişisel kullanım için kurulabilir).
@@ -42,9 +49,15 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 
 | Dosya | İş |
 |---|---|
-| `app/src/main/java/com/uykutube/app/MainActivity.java` | WebView + reklam engelleme listesi (`BLOCK_RE`), arayüz, inset düzeltmeleri, kalıcı günlük |
+| `app/src/main/java/com/uykutube/app/MainActivity.java` | WebView, istek engelleme, ana HTML'e ön script gömme (`rewriteHtml`, çerez/yönlendirme), arayüz, kendi kendine iyileşme |
+| `app/src/main/java/com/uykutube/app/AdFilter.java` | Reklam engelleme verisi: kurallar, ağ desenleri, ABP domain kümeleri, uBlock anahtarları (disk + ağdan tazeleme) |
+| `app/src/main/java/com/uykutube/app/AppLog.java` | Kalıcı teşhis günlüğü (`files/uyku.log`) |
+| `app/src/main/java/com/uykutube/app/Rules.java` | `rules.json` ayrıştırma/doğrulama, sürüm seçimi (GitHub ↔ adb ↔ önbellek) |
+| `app/src/main/java/com/uykutube/app/FilterParser.java` | ABP `\|\|domain^` kuralları ve uBlock quick-fixes json-prune anahtarlarının ayrıştırılması |
 | `app/src/main/java/com/uykutube/app/PlaybackService.java` | Ekran kapalıyken ses (wake lock), uyku zamanlayıcısı, yerel tick ile sayfa denetimi, donuk-renderer bekçisi |
-| `app/src/main/assets/inject.js` | Sayfaya enjekte edilen taraf: reklam yakalama (sessize al + 16x + atla), otomatik devam, akış takılması kurtarma, görünürlük korusu |
+| `app/src/main/assets/preinject.js` | YouTube kodundan ÖNCE çalışır: player verisinden reklam alanlarını derin temizler (`ytInitialPlayerResponse` tuzağı, fetch/JSON.parse sarmalayıcı) |
+| `app/src/main/assets/inject.js` | Sayfa yüklenince: sızan reklamı yakalama (sessize al + 16x + ileri sar + atla), otomatik devam, akış takılması kurtarma, görünürlük korusu |
+| `rules.json` | Uzaktan güncellenen kurallar (reklam anahtarları, ağ desenleri, ABP liste adresleri) — APK kurmadan güncellenir; `update-filters.bat` ile adb'den anında itilebilir |
 
 > Dahili paket kimliği `com.uykutube.app` olarak kaldı (görünen ad FireTube).
 

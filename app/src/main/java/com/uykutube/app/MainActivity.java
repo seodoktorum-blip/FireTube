@@ -33,66 +33,20 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import java.io.ByteArrayInputStream;
 import java.io.BufferedReader;
-import java.io.File;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
     private static final String TAG = "FireTube";
     private static final String START_URL = "https://m.youtube.com/";
 
-    /* Ağ seviyesinde engellenecek reklam/izleyici adresleri. Bilinçli olarak
-       SADECE cross-domain reklam/izleyici altyapısı ve izlemesiz ping'ler burada:
-       reklama ait MEDYA URL'lerini boş yanıtla kesmek video oynatıcıyı kilitliyor
-       (simsiyah ekran + sessizlik). Reklamın kendisi inject.js'te oynatıcı
-       seviyesinde yakalanıp sessizleştirilip 16x hızla geçilir. */
-    /* Yerlesik varsayilanlar; acilista uzaktan (GitHub rules.json) guncellenir:
-       ABP'nin liste guncellemesi gibi — YouTube format degistirdiginde APK
-       kurmadan sadece rules.json guncellenir. */
-    private static final String RULES_URL =
-            "https://raw.githubusercontent.com/seodoktorum-blip/FireTube/main/rules.json";
-    private volatile Pattern[] BLOCK_RE = new Pattern[]{
-            Pattern.compile("://[^/]*doubleclick\\.net/"),
-            Pattern.compile("://[^/]*googlesyndication\\.com/"),
-            Pattern.compile("://[^/]*googleadservices\\.com/"),
-            Pattern.compile("://[^/]*adservice\\.google\\."),
-            Pattern.compile("://[^/]*adserver\\."),
-            Pattern.compile("://[^/]*adsystem"),
-            Pattern.compile("://[^/]*scorecardresearch\\.com/"),
-            Pattern.compile("/pagead/"),
-            Pattern.compile("/api/stats/ads"),
-    };
-    private volatile String remoteRulesJson = null; // son basarili kurallar (sayfaya gomulur)
-
-    /* ABP/EasyList topluluk listeleri: ||domain^ kurallarindan domain kumesi.
-       listsReady true olunca shouldInterceptRequest bu kumeleri kullanir. */
-    private static final String[] DEFAULT_FILTER_LISTS = {
-            "https://easylist-downloads.adblockplus.org/v3/full/turkish-filters+easylist.txt",
-            "https://easylist-downloads.adblockplus.org/v3/full/distraction-control-free.txt",
-            "https://easylist-downloads.adblockplus.org/v3/full/fanboy-social.txt",
-            "https://easylist-downloads.adblockplus.org/v3/full/fanboy-notifications.txt",
-            "https://easylist-downloads.adblockplus.org/v3/full/easyprivacy.txt",
-            "https://easylist-downloads.adblockplus.org/v3/full/abp-filters-anti-cv.txt",
-    };
-    // Video/oynatma altyapisi: bu domainlere ABP kurali denk gelse bile DOKUNMA
-    private static final String[] SAFE_SUFFIXES = {
-            "googlevideo.com", "youtube.com", "youtube-nocookie.com", "ytimg.com",
-            "gvt1.com", "ggpht.com", "googleusercontent.com", "googleapis.com",
-            "gstatic.com", "google.com", "youtubeeducation.com", "yt.be", "youtu.be",
-    };
-    private volatile java.util.HashSet<String> adDomains = new java.util.HashSet<>();
-    private volatile java.util.HashSet<String> excDomains = new java.util.HashSet<>();
-    private volatile boolean listsReady = false;
-    // uBlock Origin topluluk anahtarlari (uAssets quick-fixes: youtube json-prune)
-    private volatile String uboKeysBoot = "";
-    private static final String UBO_QUICKFIX_URL =
-            "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/quick-fixes.txt";
-
     public static volatile MainActivity instance;
+
+    // reklam engelleme verisi: kurallar, ABP listeleri, uBlock anahtarlari
+    AdFilter filter;
 
     public WebView web;
     private FrameLayout root;
@@ -170,8 +124,12 @@ public class MainActivity extends Activity {
             return insets;
         });
 
-        loadRules();
-        loadFilterLists();
+        // Diskteki kurallar EŞZAMANLI uygulanır: ilk sayfa da güncel anahtarlarla
+        // açılsın (uzak çekim/listeler arkadan gelip açık sayfaya itilir)
+        filter = new AdFilter(this, this::pushKeysToPage);
+        filter.applyStored();
+        filter.refreshRules();
+        filter.refreshLists();
 
         createWebView();
 
@@ -183,274 +141,53 @@ public class MainActivity extends Activity {
         web.loadUrl(lastUrl);
     }
 
-    /* Kurallar: (1) adb ile itilen rules.local.json, (2) GitHub rules.json,
-       (3) onebellek — SURUM NUMARASI en yuksek olan kazanir. Boylece telefondayken
-       adb'den aninda guncelleme yapilabilir; GitHub daha yeni yayinlayinca otomatik
-       ona gecer. Ag desenleri yeniden derlenir ve kurallar sayfaya gomulur. */
-    public void loadRules() {
-        new Thread(() -> {
-            String localJson = readRulesFile("rules.local.json");   // adb ile itilen
-            String cacheJson = readRulesFile("rules.json");         // son basarili uzak
-
-            String remoteJson = null;
-            try {
-                java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(RULES_URL).openConnection();
-                c.setConnectTimeout(8000);
-                c.setReadTimeout(10000);
-                if (c.getResponseCode() == 200) {
-                    java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
-                    try (java.io.InputStream in = c.getInputStream()) {
-                        byte[] buf = new byte[8192];
-                        int n;
-                        while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
-                    }
-                    c.disconnect();
-                    String body = new String(bos.toByteArray(), StandardCharsets.UTF_8);
-                    if (body.contains("adKeys")) {
-                        remoteJson = body;
-                        writeRulesFile("rules.json", body);
-                    }
-                } else {
-                    c.disconnect();
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "uzak kural cekme hatasi: " + e.getMessage());
-            }
-
-            String best = null, src = "yerlesik";
-            int bestV = 0;
-            if (localJson != null && rulesVer(localJson) > bestV) { best = localJson; bestV = rulesVer(localJson); src = "adb yerel"; }
-            if (remoteJson != null && rulesVer(remoteJson) >= bestV) { best = remoteJson; bestV = rulesVer(remoteJson); src = "uzak (GitHub)"; }
-            if (best == null && cacheJson != null) { best = cacheJson; src = "onebellek"; }
-
-            if (best != null) {
-                remoteRulesJson = best;
-                applyBlockPatterns(best);
-                appLog("KURALLAR: " + src + " (v" + bestV + ")");
-            } else {
-                appLog("KURALLAR: yerlesik varsayilanlar");
-            }
-        }).start();
+    /* Kurallar/uBO anahtarlari sonradan gelince acik sayfadaki on script'e
+       iletilir (SPA oldugu icin sayfa yeniden yuklenmeden). */
+    private void pushKeysToPage() {
+        String js = filter.setKeysScript();
+        runOnUiThread(() -> {
+            if (web != null && !isDestroyed()) web.evaluateJavascript(js, null);
+        });
     }
 
-    private int rulesVer(String json) {        try {
-            java.util.regex.Matcher m = java.util.regex.Pattern.compile(
-                    "\"version\"\\s*:\\s*(\\d+)").matcher(json);
-            return m.find() ? Integer.parseInt(m.group(1)) : 0;
-        } catch (Exception e) {
-            return 0;
+    /* Yönlendirme döngüsü freni: 10 sn içinde 6'dan fazla yönlendirmede
+       yeniden yazma bırakılır, WebView kendisi yükler. */
+    private long redirectWindowAt = 0;
+    private int redirectCount = 0;
+
+    private synchronized boolean allowRedirectRewrite() {
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (now - redirectWindowAt > 10000) {
+            redirectWindowAt = now;
+            redirectCount = 0;
         }
+        return ++redirectCount <= 6;
     }
 
-    private String readRulesFile(String name) {
+    /* Yanıttaki Set-Cookie'leri WebView çerez deposuna yazar: belgeyi
+       kendimiz indirdiğimiz için WebView bunları görmez (oturum yenileme
+       çerezleri kaybolurdu). */
+    private static void storeCookies(String url, java.net.HttpURLConnection c) {
         try {
-            File f = new File(getFilesDir(), name);
-            if (!f.exists()) return null;
-            return new String(java.nio.file.Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private void writeRulesFile(String name, String body) {
-        try (java.io.FileOutputStream fo = new java.io.FileOutputStream(new File(getFilesDir(), name))) {
-            fo.write(body.getBytes(StandardCharsets.UTF_8));
+            java.util.Map<String, java.util.List<String>> h = c.getHeaderFields();
+            CookieManager cm = CookieManager.getInstance();
+            for (java.util.Map.Entry<String, java.util.List<String>> e : h.entrySet()) {
+                if (e.getKey() == null || !e.getKey().equalsIgnoreCase("Set-Cookie")) continue;
+                for (String v : e.getValue()) cm.setCookie(url, v);
+            }
         } catch (Exception ignored) {
         }
     }
 
-    /* ABP topluluk listelerini indirir/ayiklar (24 saat onebellek).
-       ||domain^  -> adDomains;  @@||domain^ -> excDomains. Yalniz domain-duzey
-       kurallar alinir; oynatma altyapisi SAFE_SUFFIXES ile korunur. */
-    public void loadFilterLists() {
-        new Thread(() -> {
-            String[] urls = DEFAULT_FILTER_LISTS;
-            // rules.json'da filterLists varsa onu kullan (uzaktan yapilandirilabilir)
-            try {
-                String rules = remoteRulesJson != null ? remoteRulesJson
-                        : readRulesFile("rules.json") != null ? readRulesFile("rules.json")
-                        : readRulesFile("rules.local.json");
-                if (rules != null) {
-                    java.util.ArrayList<String> u = new java.util.ArrayList<>();
-                    java.util.regex.Matcher m = java.util.regex.Pattern.compile(
-                            "\"filterLists\"\\s*:\\s*\\[(.*?)\\]", java.util.regex.Pattern.DOTALL).matcher(rules);
-                    if (m.find()) {
-                        java.util.regex.Matcher s = java.util.regex.Pattern.compile("\"(https?://[^\"]+)\"").matcher(m.group(1));
-                        while (s.find()) u.add(s.group(1));
-                    }
-                    if (!u.isEmpty()) urls = u.toArray(new String[0]);
-                }
-            } catch (Exception ignored) {
-            }
-
-            File dir = new File(getFilesDir(), "filterlists");
-            //noinspection ResultOfMethodCallIgnored
-            dir.mkdirs();
-            java.util.HashSet<String> ads = new java.util.HashSet<>(adDomains);
-            java.util.HashSet<String> exc = new java.util.HashSet<>(excDomains);
-            int okCount = 0;
-            for (int i = 0; i < urls.length; i++) {
-                File f = new File(dir, "list" + i + ".txt");
-                boolean fresh = f.exists() && System.currentTimeMillis() - f.lastModified() < 24L * 3600 * 1000;
-                if (!fresh) {
-                    if (!downloadToFile(urls[i], f)) continue;
-                    //noinspection ResultOfMethodCallIgnored
-                    f.setLastModified(System.currentTimeMillis());
-                }
-                okCount++;
-                try (java.io.BufferedReader r = new java.io.BufferedReader(
-                        new java.io.InputStreamReader(new java.io.FileInputStream(f), StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = r.readLine()) != null) parseFilterLine(line, ads, exc);
-                } catch (Exception ignored) {
-                }
-            }
-            adDomains = ads;
-            excDomains = exc;
-            listsReady = okCount > 0;
-            appLog("LISTELER: " + okCount + "/" + urls.length + " ABP listesi aktif (" +
-                    ads.size() + " domain, " + exc.size() + " istisna)");
-            Log.d(TAG, "ABP listeleri hazir: " + ads.size() + " domain");
-            loadUboQuickFixes();
-        }).start();
-    }
-
-    /* uBlock Origin'in gunluk guncellenen quick-fixes listesinden YouTube
-       json-prune anahtarlarini ayiklar: topluluk alan degistiginde burasi
-       bizi otomatik iyilestirir. */
-    private void loadUboQuickFixes() {
-        try {
-            File f = new File(getFilesDir(), "ubo-quickfixes.txt");
-            boolean fresh = f.exists() && System.currentTimeMillis() - f.lastModified() < 24L * 3600 * 1000;
-            if (!fresh) {
-                if (!downloadToFile(UBO_QUICKFIX_URL, f)) return;
-                //noinspection ResultOfMethodCallIgnored
-                f.setLastModified(System.currentTimeMillis());
-            }
-            java.util.LinkedHashSet<String> keys = new java.util.LinkedHashSet<>();
-            try (java.io.BufferedReader r = new java.io.BufferedReader(
-                    new java.io.InputStreamReader(new java.io.FileInputStream(f), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = r.readLine()) != null) {
-                    int i = line.indexOf("+js(json-prune");
-                    if (i < 0) continue;
-                    if (line.indexOf("youtube") < 0 && line.indexOf("googlevideo") < 0) continue;
-                    int comma = line.indexOf(',', i);
-                    if (comma < 0) continue;
-                    int end = line.indexOf(',', comma + 1);
-                    if (end < 0) end = line.indexOf(')', comma);
-                    if (end < 0) end = line.length();
-                    String arg = line.substring(comma + 1, end);
-                    for (String tok : arg.split("\\s+")) {
-                        if (tok.isEmpty()) continue;
-                        // yalniz duz anahtarlar: parantez/kozeli ayracli yollar atlanir
-                        if (tok.indexOf('[') >= 0 || tok.indexOf('{') >= 0 || tok.indexOf('(') >= 0) continue;
-                        int dot = tok.lastIndexOf('.');
-                        if (dot >= 0) tok = tok.substring(dot + 1);
-                        if (tok.length() < 3) continue;
-                        if (!tok.matches("[A-Za-z0-9_$-]{3,40}")) continue;
-                        keys.add(tok);
-                    }
-                }
-            }
-            if (!keys.isEmpty()) {
-                StringBuilder sb = new StringBuilder("[");
-                for (String k : keys) {
-                    if (sb.length() > 1) sb.append(',');
-                    sb.append('"').append(k).append('"');
-                }
-                sb.append(']');
-                uboKeysBoot = sb.toString();
-                appLog("UBO: " + keys.size() + " topluluk anahtari alindi (quick-fixes)");
-                Log.d(TAG, "UBO anahtarlari: " + keys);
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "UBO quick-fixes hatasi: " + e.getMessage());
-        }
-    }
-
-    private boolean downloadToFile(String urlStr, File dest) {
-        java.net.HttpURLConnection c = null;
-        try {
-            c = (java.net.HttpURLConnection) new java.net.URL(urlStr).openConnection();
-            c.setConnectTimeout(10000);
-            c.setReadTimeout(20000);
-            if (c.getResponseCode() != 200) {
-                c.disconnect();
-                return false;
-            }
-            try (java.io.InputStream in = c.getInputStream();
-                 java.io.FileOutputStream fo = new java.io.FileOutputStream(dest)) {
-                byte[] buf = new byte[16384];
-                int n;
-                while ((n = in.read(buf)) > 0) fo.write(buf, 0, n);
-            }
-            return true;
-        } catch (Exception e) {
-            Log.w(TAG, "liste indirme hatasi: " + urlStr + " -> " + e.getMessage());
-            if (c != null) c.disconnect();
-            return false;
-        }
-    }
-
-    private void parseFilterLine(String line, java.util.HashSet<String> ads, java.util.HashSet<String> exc) {
-        line = line.trim();
-        if (line.isEmpty() || line.charAt(0) == '!' || line.charAt(0) == '[' || line.charAt(0) == '#') return;
-        boolean isException = line.startsWith("@@");
-        if (isException) line = line.substring(2);
-        if (!line.startsWith("||")) return;
-        String rest = line.substring(2);
-        int end = rest.length();
-        for (int i = 0; i < rest.length(); i++) {
-            char ch = rest.charAt(i);
-            if (ch == '^' || ch == '/' || ch == '?' || ch == '*' || ch == '$' || ch == '"' || ch == ' ' || ch == ',') {
-                end = i;
-                break;
-            }
-        }
-        String domain = rest.substring(0, end).toLowerCase(Locale.ROOT);
-        if (domain.length() < 4 || domain.indexOf('.') < 0) return;
-        for (String safe : SAFE_SUFFIXES) {
-            if (domain.endsWith(safe)) return;
-        }
-        if (isException) exc.add(domain);
-        else ads.add(domain);
-    }
-
-    /* host'un her ust-soneksi kumede mi? (a.b.c.com -> b.c.com, c.com ...) */
-    private static boolean suffixMatch(String host, java.util.HashSet<String> set) {
-        if (set.isEmpty()) return false;
-        String h = host;
-        while (h != null && !h.isEmpty()) {
-            if (set.contains(h)) return true;
-            int dot = h.indexOf('.');
-            if (dot < 0 || dot >= h.length() - 1) return false;
-            h = h.substring(dot + 1);
-        }
-        return false;
-    }
-
-    private void applyBlockPatterns(String json) {
-        try {
-            java.util.ArrayList<Pattern> list = new java.util.ArrayList<>();
-            java.util.regex.Matcher m = java.util.regex.Pattern.compile(
-                    "\"blockPatterns\"\\s*:\\s*\\[(.*?)\\]", java.util.regex.Pattern.DOTALL).matcher(json);
-            if (m.find()) {
-                java.util.regex.Matcher s = java.util.regex.Pattern.compile("\"([^\"]+)\"").matcher(m.group(1));
-                while (s.find()) {
-                    try {
-                        list.add(Pattern.compile(s.group(1)));
-                    } catch (Exception ignored) {
-                    }
-                }
-            }
-            if (!list.isEmpty()) {
-                BLOCK_RE = list.toArray(new Pattern[0]);
-                Log.d(TAG, "ag desenleri guncellendi: " + list.size());
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "kural uygulama hatasi: " + e.getMessage());
-        }
+    private static WebResourceResponse htmlResponse(String html) {
+        WebResourceResponse res = new WebResourceResponse("text/html", "utf-8",
+                new ByteArrayInputStream(html.getBytes(StandardCharsets.UTF_8)));
+        java.util.Map<String, String> headers = new java.util.HashMap<>();
+        headers.put("Content-Type", "text/html; charset=utf-8");
+        // CSP başlıklarını bilerek iletmiyoruz: kendi enjekte ettiğimiz
+        // satır içi script'in çalışabilmesi için.
+        res.setResponseHeaders(headers);
+        return res;
     }
 
     /* Ana HTML belgesini kendimiz indirir, <head>'in hemen sonrasına
@@ -463,7 +200,9 @@ public class MainActivity extends Activity {
             c = (java.net.HttpURLConnection) url.openConnection();
             c.setConnectTimeout(10000);
             c.setReadTimeout(15000);
-            c.setInstanceFollowRedirects(true);
+            // Yönlendirme İZLENMEZ: izlenseydi hedefin içeriği (ör. accounts.google.com)
+            // orijinal adresin origin'i altında sunulurdu.
+            c.setInstanceFollowRedirects(false);
             c.setRequestProperty("User-Agent", uaString != null ? uaString : "");
             c.setRequestProperty("Accept-Language", "tr,en;q=0.9");
             // açılışı basit tut: sıkıştırma isteme
@@ -472,6 +211,18 @@ public class MainActivity extends Activity {
             if (cookies != null) c.setRequestProperty("Cookie", cookies);
 
             int code = c.getResponseCode();
+            storeCookies(urlStr, c);
+            if (code >= 300 && code < 400) {
+                String loc = c.getHeaderField("Location");
+                if (loc == null || !allowRedirectRewrite()) return null;
+                String target = new java.net.URL(url, loc).toString();
+                if (target.equals(urlStr)) return null;
+                // WebResourceResponse 3xx döndüremez: tarayıcıyı hedefe gönderen
+                // küçük bir belge döner; hedef youtube.com ise o da yakalanıp ön
+                // script'i alır. quote() "/" kaçışlar → </script> oluşamaz.
+                return htmlResponse("<!doctype html><script>location.replace("
+                        + org.json.JSONObject.quote(target) + ")</script>");
+            }
             if (code != 200) return null;
 
             java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
@@ -484,20 +235,8 @@ public class MainActivity extends Activity {
             int head = html.indexOf("<head");
             int gt = head >= 0 ? html.indexOf('>', head) : -1;
             if (gt < 0) return null;
-            String rulesBoot = (remoteRulesJson != null
-                    ? "window.__FIRE_RULES=" + remoteRulesJson + ";"
-                    : "")
-                    + (uboKeysBoot.isEmpty() ? "" : "window.__FIRE_UBO_KEYS=" + uboKeysBoot + ";");
-            html = html.substring(0, gt + 1) + "<script>" + rulesBoot + preinjectSrc + "</script>" + html.substring(gt + 1);
-
-            WebResourceResponse res = new WebResourceResponse("text/html", "utf-8",
-                    new ByteArrayInputStream(html.getBytes(StandardCharsets.UTF_8)));
-            java.util.Map<String, String> headers = new java.util.HashMap<>();
-            headers.put("Content-Type", "text/html; charset=utf-8");
-            // CSP başlıklarını bilerek iletmiyoruz: kendi enjekte ettiğimiz
-            // satır içi script'in çalışabilmesi için.
-            res.setResponseHeaders(headers);
-            return res;
+            html = html.substring(0, gt + 1) + "<script>" + filter.bootScript() + preinjectSrc + "</script>" + html.substring(gt + 1);
+            return htmlResponse(html);
         } catch (Exception e) {
             Log.w(TAG, "html yeniden yazma başarısız (" + e.getMessage() + ") — normal yükleme");
             return null;
@@ -530,25 +269,13 @@ public class MainActivity extends Activity {
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 Uri url = request.getUrl();
                 String us = url == null ? "" : url.toString();
-                // 1) ABP/EasyList topluluk domain listesi (her zaman güncel;
-                //    istisna kuralları önce denetlenir, video altyapısı korunur)
                 String host = url == null || url.getHost() == null ? "" : url.getHost().toLowerCase(Locale.ROOT);
-                if (listsReady && !host.isEmpty()) {
-                    if (!suffixMatch(host, excDomains) && suffixMatch(host, adDomains)) {
-                        blocked.incrementAndGet();
-                        runOnUiThread(MainActivity.this::updateChip);
-                        return new WebResourceResponse("text/plain", "utf-8",
-                                new ByteArrayInputStream(new byte[0]));
-                    }
-                }
-                // 2) Bizim özel ağ desenleri (rules.json)
-                for (Pattern p : BLOCK_RE) {
-                    if (p.matcher(us).find()) {
-                        blocked.incrementAndGet();
-                        runOnUiThread(MainActivity.this::updateChip);
-                        return new WebResourceResponse("text/plain", "utf-8",
-                                new ByteArrayInputStream(new byte[0]));
-                    }
+                // ABP topluluk domain kümesi + rules.json ağ desenleri
+                if (filter.shouldBlock(host, us)) {
+                    blocked.incrementAndGet();
+                    runOnUiThread(MainActivity.this::updateChip);
+                    return new WebResourceResponse("text/plain", "utf-8",
+                            new ByteArrayInputStream(new byte[0]));
                 }
                 // Ana belge (HTML) isteklerini kendimiz indirip <head>'in başına
                 // preinject.js gömeriz: script YouTube'un kodundan ÖNCE çalışır ve
@@ -627,34 +354,8 @@ public class MainActivity extends Activity {
     /* Renderer çöktüğünde/donduğunda çağrılır: eski WebView'i temizleyip
        yeni kurar ve kalınan sayfayı geri yükler (hesap açık olduğu için
        video kaldığı yerden devam eder). */
-    /* Kalıcı günlük: logcat tamponu döndüğünde bile gece olan biten
-       sonra incelenebilsin. files/uyku.log (256 KB üstünde döndürülür). */
-    private File logFile = null;
-    private long logSize = 0;
-
-    public synchronized void appLog(String m) {
-        try {
-            if (logFile == null) {
-                logFile = new File(getFilesDir(), "uyku.log");
-                logSize = logFile.exists() ? logFile.length() : 0;
-            }
-            if (logSize > 256 * 1024) {
-                File old = new File(getFilesDir(), "uyku.old.log");
-                //noinspection ResultOfMethodCallIgnored
-                old.delete();
-                //noinspection ResultOfMethodCallIgnored
-                logFile.renameTo(old);
-                logFile = new File(getFilesDir(), "uyku.log");
-                logSize = 0;
-            }
-            String line = new java.text.SimpleDateFormat("MM-dd HH:mm:ss", Locale.ROOT)
-                    .format(new java.util.Date()) + " " + m + "\n";
-            try (java.io.FileOutputStream fo = new java.io.FileOutputStream(logFile, true)) {
-                fo.write(line.getBytes(StandardCharsets.UTF_8));
-            }
-            logSize += line.length();
-        } catch (Exception ignored) {
-        }
+    public void appLog(String m) {
+        AppLog.write(this, m);
     }
 
     private static long lastRebuildAt = 0;
@@ -758,8 +459,12 @@ public class MainActivity extends Activity {
             });
         }
 
+        /* Köprü sayfadaki tüm frame'lere açık (iframe'ler de çağırabilir):
+           günlüğe yazılan mesaj uzunluğu sınırlanır. */
         @JavascriptInterface
         public void log(String msg) {
+            if (msg == null) return;
+            if (msg.length() > 300) msg = msg.substring(0, 300) + "…";
             Log.d(TAG, "[player] " + msg);
             appLog("[player] " + msg);
         }
@@ -817,7 +522,7 @@ public class MainActivity extends Activity {
                 "⟳ Yenile",
                 "🔋 Arka plan çalma izni (pil)",
         };
-        String versionName = "1.5";
+        String versionName = "?";
         try {
             versionName = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Exception ignored) {
@@ -888,6 +593,9 @@ public class MainActivity extends Activity {
     public void kickWebViewSurface() {
         runOnUiThread(() -> {
             if (web == null || isFinishing() || isDestroyed()) return;
+            // Tam ekranda video customView'da çizilir; WebView'i söküp görünür
+            // yapmak tam ekrandan çıkarabilir/üstüne binebilir — dokunma.
+            if (customView != null) return;
             // 1) AwContents'i duraklat/destekle: compositor yüzeyini bırakır/yeniden ister
             try { web.onPause(); } catch (Exception ignored) {}
             try { web.onResume(); } catch (Exception ignored) {}

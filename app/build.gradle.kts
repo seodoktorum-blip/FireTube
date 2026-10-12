@@ -10,8 +10,8 @@ android {
         applicationId = "com.uykutube.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "1.12"
+        versionCode = 13
+        versionName = "1.13"
     }
 
     buildTypes {
@@ -33,4 +33,9 @@ android {
 dependencies {
     // aşağı çekerek yenileme göstergesi
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
+
+    // birim testleri (JVM): ayrıştırıcılar; Android'in org.json'u testte stub
+    // olduğu için gerçeği eklenir
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }
