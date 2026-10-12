@@ -1,4 +1,4 @@
-Şu an: Tüm fazlar + telefon doğrulaması bitti | Son yapılan: v1.13 telefonda doğrulandı, takılma bekçisi düzeltildi | Sıradaki: commit/push (kullanıcı onayıyla)
+Şu an: İş tamamlandı | Son yapılan: v1.13 commit 49f4190 GitHub'a push edildi, rules.json v3 yayında | Sıradaki: kullanıcının elle denemeleri (aşağıda)
 
 # FireTube — inceleme bulgularını düzeltme planı (12 Eki 2026)
 
@@ -20,7 +20,7 @@ AdFilter/AppLog ayrıldı, 17 JUnit + Node testi, Gradle wrapper, v1.13.
 ## Açık işler
 - [x] Telefonda doğrulama: soğuk açılış anahtarları, zamanlayıcı, blur, ekran kapalı çalma (ayrıntı: docs/done-phases.md)
 - [ ] Elle denenmedi: Google çıkış/giriş (yönlendirme+çerez yolu), tam ekran, kilit açılınca siyah ekran olmaması
-- [ ] Commit + push (rules.json v3 GitHub'a gitmeli — uygulama oradan çekiyor)
+- [x] Commit + push: 49f4190 (seodoktorum-blip hesabıyla; makinedeki varsayılan git kimliği thecreepervibe ve yazma izni yok)
 - [ ] `./gradlew` ilk çalıştırmada Gradle 9.8.0 dağıtımını indirir (yerelde denenmedi)
 - Bilinen sınır: WebView'de sistem MediaSession yok; kulaklık düğmesi işaretlemesi yalnız YouTube mediaSession işleyicisi çağrılırsa çalışır
 - Bilinçli bırakılan: release `debuggable=true` (run-as günlük + update-filters.bat için)
