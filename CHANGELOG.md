@@ -1,5 +1,14 @@
 # Sürüm Geçmişi
 
+## v1.16.1 — 13 Ekim 2026
+- Gerçek gecede doğrulandı (12→13 Ekim): 04:17'de sistem video motorunu
+  öldürdü; uygulama ekran kapalıyken kurtardı, video 30. dakikadan sürdü,
+  sessiz başlayan video 4 sn içinde sesli hâle getirildi ve video sonuna kadar
+  çaldı. Sabah 336 dk sonra açılışta ekran normaldi (SIYAH-TEST yok).
+- Teşhis düzeltmesi: ekran birkaç saniye açılıp kapanınca siyah ekran ölçümü
+  yüzeysiz pencerede "hata" yazıyordu (yanlış alarm); uygulama arka plandaysa
+  ölçüm artık atlanır.
+
 ## v1.16 — 12 Ekim 2026
 **Siyah ekran ve sessiz kurtarma — kök nedenleri bulundu.**
 - **Siyah ekran ("ekranı kapatıp yarım saat sonra açınca"):** gece MIUI video

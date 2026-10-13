@@ -844,6 +844,9 @@ public class MainActivity extends Activity {
 
     private void checkBlank(String tag) {
         if (Build.VERSION.SDK_INT < 26 || web == null || isDestroyed()) return;
+        // ölçüm sırasında uygulama yeniden arka plana geçtiyse (ekran birkaç sn
+        // açılıp kapandı) pencerenin yüzeyi yoktur: ölçülecek bir şey yok
+        if (!activityStarted) return;
         if (customView != null) {
             appLog("SIYAH-TEST " + tag + ": tam ekran — atlandı");
             return;

@@ -1,4 +1,4 @@
-Şu an: v1.16 push edildi | Son yapılan: commit + push | Sıradaki: kullanıcı gece kullanımı sonrası günlük kontrolü (SIYAH-TEST, sessiz başlama satırları)
+Şu an: v1.16.1 push edildi | Son yapılan: commit + push | Sıradaki: yok (isteğe bağlı: docs/oneriler.md A9/A10/A11; A8 için günlükte 'ön script eklenemedi' izlensin)
 
 # FireTube — plan
 
@@ -21,7 +21,8 @@ Ekran kapalıyken/arka planda 144p (özgün ayar birebir geri), SponsorBlock (sh
 # v1.16 — siyah ekran + sessiz kurtarma ✅ (ayrıntı: docs/done-phases.md)
 Kök neden 1: SwipeRefreshLayout eski WebView'i ölçüyordu (kurtarmada yeni WebView 0x0) → kalıcı kap. Kök neden 2: dokunuşsuz yüklemede YouTube sessiz başlatıyor → ses açma. Telefonda yeniden üretildi + doğrulandı.
 - [x] Commit + push (seodoktorum-blip hesabıyla)
-- [ ] Kullanıcı gerçek gecede doğrulasın (sabah günlükte SIYAH-TEST satırı olmamalı)
+- [x] Gerçek gece doğrulandı (13 Eki 04:17 kurtarma: sesli devam, sabah ekran normal). v1.16.1: ekran kısa açılıp kapanınca ölçüm yanlış alarmı düzeltildi
+- [x] v1.16.1 commit + push (seodoktorum-blip hesabıyla)
 
 ## Açık işler
 - [ ] `./gradlew` ilk çalıştırmada Gradle 9.8.0 dağıtımını indirir (yerelde denenmedi)
