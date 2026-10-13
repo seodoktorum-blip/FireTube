@@ -1,5 +1,18 @@
 # Sürüm Geçmişi
 
+## v1.17 — 13 Ekim 2026
+- **Kurtarma freni ölü görünüm bırakmıyor (A9):** 2 dk içinde ikinci kez video
+  motoru ölürse önceden kurtarma tamamen atlanıyor, ölü WebView ekranda kalıyordu
+  (siyah sayfa; aşağı çekme de ölü sayfayı kullanıyordu). Artık ölü görünüm
+  hemen yenisiyle değişir, fren yalnız sayfa yüklemesini kalan süre kadar
+  geciktirir. Yüklenene kadar zemin koyu (gece beyaz parlama yok).
+- **Kilitler (A10):** Wi-Fi kilidi Android 14+'da işlevsiz olduğu için yalnız
+  Android 13 ve altında alınıyor; uyku kilidi 30 dk'da bir yenileniyor (10 saati
+  aşan oturumlarda düşmesin).
+- **MIUI pil mesajı (A11):** menüdeki "Arka plan çalma izni" artık "Zaten muaf"
+  demekle kalmıyor: Xiaomi/HyperOS'un ayrıca gereken "Otomatik başlatma" ve
+  "Pil tasarrufu: Kısıtlama yok" ayarlarını anlatıp ilgili ekranları açıyor.
+
 ## v1.16.1 — 13 Ekim 2026
 - Gerçek gecede doğrulandı (12→13 Ekim): 04:17'de sistem video motorunu
   öldürdü; uygulama ekran kapalıyken kurtardı, video 30. dakikadan sürdü,

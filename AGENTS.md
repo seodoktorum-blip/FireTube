@@ -1,4 +1,4 @@
-Şu an: v1.16.1 push edildi | Son yapılan: commit + push | Sıradaki: yok (isteğe bağlı: docs/oneriler.md A9/A10/A11; A8 için günlükte 'ön script eklenemedi' izlensin)
+Şu an: v1.17 push edildi | Son yapılan: commit + push | Sıradaki: yok (A8 için günlükte 'ön script eklenemedi' izlensin)
 
 # FireTube — plan
 
@@ -23,6 +23,13 @@ Kök neden 1: SwipeRefreshLayout eski WebView'i ölçüyordu (kurtarmada yeni We
 - [x] Commit + push (seodoktorum-blip hesabıyla)
 - [x] Gerçek gece doğrulandı (13 Eki 04:17 kurtarma: sesli devam, sabah ekran normal). v1.16.1: ekran kısa açılıp kapanınca ölçüm yanlış alarmı düzeltildi
 - [x] v1.16.1 commit + push (seodoktorum-blip hesabıyla)
+
+# v1.17 — kurtarma freni, kilitler, MIUI mesajı (13 Eki 2026)
+- [x] A9: renderer ölünce fren olsa da ölü WebView hemen yenisiyle değişsin; fren yalnız sayfa yüklemesini geciktirsin
+- [x] A10: Wi-Fi kilidi yalnız Android 13 ve altında (14+'da işlevsiz); uyku kilidi 30 dk'da bir yenilensin; README/yorumlar
+- [x] A11: menüdeki pil seçeneği MIUI'nin ayrı ayarlarını (Kısıtlama yok, Otomatik başlatma) anlatsın ve ilgili ekranı açsın
+- [x] Derleme + telefonda doğrulama + CHANGELOG
+- [x] Commit + push (seodoktorum-blip hesabıyla)
 
 ## Açık işler
 - [ ] `./gradlew` ilk çalıştırmada Gradle 9.8.0 dağıtımını indirir (yerelde denenmedi)

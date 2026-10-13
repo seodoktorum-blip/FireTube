@@ -28,7 +28,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /* Video oynarken çalışır: ekran kapalıyken sesin kesilmemesi için partial
-   wake lock + wifi lock tutar, uyku zamanlayıcısını sayar (son 60 sn sesi
+   wake lock (30 dk'da bir yenilenir) + Android 13 ve altında wifi lock tutar, uyku zamanlayıcısını sayar (son 60 sn sesi
    kısar), sayfa zamanlayıcıları kısıtlandığında reklam/duraklama denetimini
    (window.__uykuTick) saniyede bir kendisi tetikler. Ayrıca: kulaklık
    çıkınca ve telefon çalınca duraklatır, bildirim + MediaSession ile kilit
@@ -435,14 +435,23 @@ public class PlaybackService extends Service {
             wl = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "UykuTube:play");
             wl.setReferenceCounted(false);
         }
-        if (!wl.isHeld()) wl.acquire(10L * 60 * 60 * 1000);
-        if (wifiLock == null) {
-            WifiManager wm = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
-            wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "UykuTube:wifi");
-            wifiLock.setReferenceCounted(false);
+        if (!wl.isHeld()) wl.acquire(WAKE_MS);
+        // Android 14+ (API 34): WIFI_MODE_FULL_HIGH_PERF işlevsiz ("no impact");
+        // yerine geçen LOW_LATENCY yalnız ekran açık + uygulama öndeyken etkin —
+        // gece işe yaramaz, gündüz pil harcar. Yalnız 13 ve altında alınır.
+        if (Build.VERSION.SDK_INT < 34) {
+            if (wifiLock == null) {
+                WifiManager wm = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+                wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "UykuTube:wifi");
+                wifiLock.setReferenceCounted(false);
+            }
+            if (!wifiLock.isHeld()) wifiLock.acquire();
         }
-        if (!wifiLock.isHeld()) wifiLock.acquire();
     }
+
+    // Uyku kilidi süresi: güvenlik sınırı (unutulursa pil bitmesin). Oturum
+    // 10 saati aşabileceği için tikte 30 dk'da bir yenilenir.
+    private static final long WAKE_MS = 10L * 60 * 60 * 1000;
 
     /* Ses odağı (audio focus) bilinçli olarak İSTENMİYOR: WebView/Chromium medya
        için kendi oturumunu yönetir; bizimkisi onunla çakışıp play/pause döngüsü
@@ -470,6 +479,8 @@ public class PlaybackService extends Service {
                     a.lastStatusAt = System.currentTimeMillis(); // döngüyü önle
                     a.rebuildWebView("durum-2dk-dir-gelmiyor");
                 }
+                // Uyku kilidini 30 dk'da bir yenile (10 saatlik sınır gece dolmasın)
+                if (tickCount % 1800 == 0 && wl != null) wl.acquire(WAKE_MS);
                 // Kuralları 6 saatte bir tazele (uygulama açılışındaki çekimenin
                 // yanı sıra uzun gece oturumlarında da güncel kalsın).
                 if (tickCount > 0 && tickCount % 21600 == 0) {

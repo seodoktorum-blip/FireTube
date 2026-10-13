@@ -300,6 +300,8 @@ public class MainActivity extends Activity {
     private void createWebView() {
         web = new KeepAliveWebView(this);
         if (screenReleased) ((KeepAliveWebView) web).setHoldScreen(false);
+        // yüklenene kadar koyu zemin: gece kurtarmasında beyaz parlama olmasın
+        web.setBackgroundColor(Color.parseColor("#0F0F0F"));
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -430,7 +432,7 @@ public class MainActivity extends Activity {
                         + detail.rendererPriorityAtExit() + ") — yeniden kuruluyor");
                 Log.e(TAG, "renderer öldü (crash=" + crashed + ") — WebView yeniden kuruluyor");
                 MainActivity a = MainActivity.instance;
-                if (a != null) a.rebuildWebView("renderer-cokus");
+                if (a != null) a.rebuildWebView("renderer-cokus", true);
                 return true;
             }
         });
@@ -451,15 +453,34 @@ public class MainActivity extends Activity {
     }
 
     private static long lastRebuildAt = 0;
+    private String pendingUrl = null;
+    private final Runnable loadPending = () -> {
+        if (web == null || isDestroyed() || pendingUrl == null) return;
+        appLog("KURTARMA: bekletilen sayfa yükleniyor");
+        web.loadUrl(pendingUrl);
+        pendingUrl = null;
+    };
 
     public void rebuildWebView(String reason) {
+        rebuildWebView(reason, false);
+    }
+
+    /* Kurtarma freni (2 dk'da bir): çökme döngüsünde sürekli yükleme olmasın.
+       dead=true (renderer öldü): ölü WebView kullanılamaz — fren olsa da HEMEN
+       yenisiyle değiştirilir, fren yalnız sayfa yüklemesini kalan süre kadar
+       geciktirir (önceden ölü görünüm ekranda kalıyordu → siyah sayfa, aşağı
+       çekme de ölü sayfayı kullanıyordu). dead=false (donmuş ama canlı): fren
+       içinde hiçbir şey yapılmaz. */
+    public void rebuildWebView(String reason, boolean dead) {
         long now = android.os.SystemClock.elapsedRealtime();
-        if (now - lastRebuildAt < 120000) {
+        final long wait = 120000 - (now - lastRebuildAt);
+        if (wait > 0 && !dead) {
             Log.w(TAG, "kurtarma çok sık — atlandı: " + reason);
             appLog("KURTARMA: çok sık — atlandı (" + reason + ")");
             return;
         }
-        lastRebuildAt = now;
+        // geciktirilen yüklemede fren, yüklemenin yapılacağı andan sayılır
+        lastRebuildAt = wait > 0 ? now + wait : now;
         Log.e(TAG, "WebView kurtarma: " + reason);
         appLog("KURTARMA: " + reason);
         runOnUiThread(() -> {
@@ -485,8 +506,17 @@ public class MainActivity extends Activity {
             if (url.contains("&t=") || url.contains("?t=")) {
                 appLog("KURTARMA: kaldığı yerden → " + url.replaceAll(".*[?&]t=", "t="));
             }
+            bridgeHandler.removeCallbacks(loadPending);
             createWebView();
-            web.loadUrl(url);
+            if (wait > 0) {
+                appLog("KURTARMA: çok sık — ölü görünüm değiştirildi, sayfa "
+                        + (wait / 1000) + " sn sonra yüklenecek");
+                pendingUrl = url;
+                bridgeHandler.postDelayed(loadPending, wait);
+            } else {
+                pendingUrl = null;
+                web.loadUrl(url);
+            }
             kickWebViewSurface(); // ekranda siyah kalmasin: yeni yuzey garantilensin
         });
     }
@@ -721,19 +751,58 @@ public class MainActivity extends Activity {
 
     /* MIUI/xiaomi pil kısıtlaması ekran kapalıyken uygulamayı dondurabilir;
      sistem "pil optimizasyonundan muaf" onayı ister. */
+    private static final android.content.ComponentName MIUI_AUTOSTART = new android.content.ComponentName(
+            "com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity");
+
+    /* Arka planda çalma izinleri. Android'in standart pil muafiyeti tek başına
+       yetmez: MIUI/HyperOS'un ayrıca "Otomatik başlatma" ve uygulamaya özel pil
+       kısıtlaması ("Kısıtlama yok") ayarları var — gece uygulamayı kapatan
+       bunlar olabilir. Önceki "Zaten muaf 👍" mesajı bu yüzden yanıltıcıydı. */
     private void requestBatteryException() {
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
-        if (pm.isIgnoringBatteryOptimizations(getPackageName())) {
-            Toast.makeText(this, "Zaten muaf — pil kısıtlaması kapalı 👍", Toast.LENGTH_SHORT).show();
+        if (!pm.isIgnoringBatteryOptimizations(getPackageName())) {
+            try {
+                startActivity(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:" + getPackageName())));
+                Toast.makeText(this, "Açılan pencerede \"İzin ver\" de", Toast.LENGTH_LONG).show();
+            } catch (Exception e) {
+                Toast.makeText(this, "Ayarlar açılamadı: Ayarlar → Pil → FireTube", Toast.LENGTH_LONG).show();
+            }
             return;
         }
-        try {
-            startActivity(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                    Uri.parse("package:" + getPackageName())));
-            Toast.makeText(this, "Açılan pencerede \"İzin ver\" de", Toast.LENGTH_LONG).show();
-        } catch (Exception e) {
-            Toast.makeText(this, "Ayarlar açılamadı: Ayarlar → Pil → FireTube", Toast.LENGTH_LONG).show();
+        String brand = (Build.MANUFACTURER + " " + Build.BRAND).toLowerCase(Locale.ROOT);
+        boolean hasAutostart = new Intent().setComponent(MIUI_AUTOSTART).resolveActivity(getPackageManager()) != null;
+        boolean miui = hasAutostart || brand.contains("xiaomi") || brand.contains("redmi") || brand.contains("poco");
+        AlertDialog.Builder b = new AlertDialog.Builder(this)
+                .setTitle("Arka planda çalma")
+                .setMessage(miui
+                        ? "✓ Android pil muafiyeti açık.\n\nXiaomi / HyperOS'ta ayrıca iki ayar gerekir:\n"
+                        + "• Otomatik başlatma: AÇIK\n• Pil tasarrufu: Kısıtlama yok\n\n"
+                        + "Bunlar kapalıysa sistem uygulamayı gece kapatabilir."
+                        : "✓ Android pil muafiyeti açık — ek ayar gerekmez.")
+                .setNegativeButton("Kapat", null);
+        if (miui) {
+            b.setPositiveButton("Pil tasarrufu", (d, w) -> {
+                try {
+                    startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:" + getPackageName())));
+                    Toast.makeText(this, "Pil tasarrufu → \"Kısıtlama yok\" seç", Toast.LENGTH_LONG).show();
+                } catch (Exception e) {
+                    Toast.makeText(this, "Açılamadı: Ayarlar → Uygulamalar → FireTube → Pil", Toast.LENGTH_LONG).show();
+                }
+            });
+            if (hasAutostart) {
+                b.setNeutralButton("Otomatik başlatma", (d, w) -> {
+                    try {
+                        startActivity(new Intent().setComponent(MIUI_AUTOSTART));
+                        Toast.makeText(this, "Listede FireTube'u aç", Toast.LENGTH_LONG).show();
+                    } catch (Exception e) {
+                        Toast.makeText(this, "Açılamadı: Güvenlik → Otomatik başlatma", Toast.LENGTH_LONG).show();
+                    }
+                });
+            }
         }
+        b.show();
     }
 
     @Override

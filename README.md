@@ -12,7 +12,7 @@ A minimal, ad-free YouTube player for people who fall asleep listening to videos
   1. Ağ seviyesinde reklam/izleyici altyapısı engellenir (doubleclick, googlesyndication, pagead vb.).
   2. Sızan reklam olursa oynatıcı seviyesinde **anında** (medya olayları + oynatıcı gözlemcisi) yakalanır: **sesi kısılır, 16x hıza çekilir**, ileri sarılır, "Atla" düğmesine otomatik basılır. En kötü senaryoda bile reklam seni sesle uyandıramaz.
   - Reklamın *medya akışını* ağdan engellemek oynatıcıyı kilitlediği için bilinçli olarak **yapılmıyor** (denedik, simsiyah ekrandan ibaret kaldı 🙃).
-- **Ekran kapalıyken / kilit ekranında ses devam eder (gerçek cihazda test edildi):** Chromium WebView'in "pencere görünmez → medyayı duraklat" davranışı `KeepAliveWebView` ile devre dışı bırakılır; sayfaya her zaman görünür olduğu söylenir. Video oynarken bildirimde servis çalışır (partial wake lock + wifi lock). Ekran kapalıyken reklam/duraklama denetimi, sayfa zamanlayıcı kısıtlamasına takılmadığı için uygulama tarafından saniyede bir `__uykuTick` ile sürdürülür.
+- **Ekran kapalıyken / kilit ekranında ses devam eder (gerçek cihazda test edildi):** Chromium WebView'in "pencere görünmez → medyayı duraklat" davranışı `KeepAliveWebView` ile devre dışı bırakılır; sayfaya her zaman görünür olduğu söylenir. Video oynarken bildirimde servis çalışır (partial wake lock; Android 13 ve altında ayrıca wifi lock). Ekran kapalıyken reklam/duraklama denetimi, sayfa zamanlayıcı kısıtlamasına takılmadığı için uygulama tarafından saniyede bir `__uykuTick` ile sürdürülür.
 - **Video kendiliğinden durmaz:** dokunma gerekliliği kaldırıldı; açılan video kendiliğinden başlar. "Devam etmek istiyor musun?" kutuları otomatik onaylanır. Sen dokunmadığın halde video durursa kendiliğinden devam ettirilir — ama **sen duraklattıysan dokunulmaz**.
 - **Kendi kendine iyileşme:**
   - Video motoru (renderer) çökerse WebView sıfırdan kurulur, video kaldığı yerden devam eder.
@@ -79,7 +79,7 @@ Bu uygulama kişisel kullanım için yazılmış, YouTube mobil sitesini görün
 **FireTube** is a minimal Android WebView-based YouTube player built for one purpose: falling asleep to videos without being woken up by ads.
 
 - **Two-layer ad handling:** network-level blocking of ad/tracking infrastructure, plus a player-level watchdog that mutes and 16x fast-forwards any ad that still plays. Ad *media* URLs are deliberately never blocked — returning empty responses for them wedges the player (learned the hard way).
-- **Plays with screen off / locked:** a WebView subclass swallows window-visibility changes so Chromium doesn't pause media, backed by a foreground service holding wake/wifi locks. Page-side watchdogs keep running via a native per-second tick that bypasses timer throttling.
+- **Plays with screen off / locked:** a WebView subclass swallows window-visibility changes so Chromium doesn't pause media, backed by a foreground service holding a wake lock (plus a wifi lock on Android 13 and below). Page-side watchdogs keep running via a native per-second tick that bypasses timer throttling.
 - **Self-healing:** renderer crashes, frozen pages and stalled streams are detected and recovered automatically — with a rate limiter so recovery itself can never loop.
 - **Respects your YouTube settings:** if autoplay is off, videos simply stop when they end; the app never advances on its own.
 - Sleep timer, pull-to-refresh, fullscreen video, persistent diagnostic log (`files/uyku.log`).
