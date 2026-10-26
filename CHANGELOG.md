@@ -1,5 +1,33 @@
 # Sürüm Geçmişi
 
+## v1.18 — 26 Ekim 2026
+15–26 Ekim gece günlüklerinde bulunan sorunlar:
+- **Takılma bekçisi artık gerçekten yeniliyor:** akış takılınca bekçi videoyu
+  0,25 sn ileri "dürtüyordu"; bu atlamayı da ilerleme sayıp sayacını
+  sıfırlıyordu, 2,5 dakikalık yenilemeye hiç varamıyordu. 24 Ekim'de reklamdan
+  sonra yüklenemeyen bir video 58 dakika sessiz kaldı. Artık dürtme ilerleme
+  sayılmıyor; takılı video 2,5 dakikada yenileniyor (yeni test:
+  `app/src/test/js/inject-stall.test.js`).
+- **Ön script yeniden deneniyor:** gece kurtarmasında ağ birkaç saniye geç
+  gelince sayfa reklam temizleyici ön script olmadan açılıyordu (24 Ekim: DNS
+  çözülemedi, 1 saat sonra bir reklam ve yukarıdaki takılma). Bağlantı
+  kurulamazsa artık 2 sn arayla iki kez daha deneniyor.
+- **Arka planda duraklatılmış sayfa donduruluyor:** video duraklatılmış ya da
+  bitmiş, uygulama arka planda ve servis kapanmışken YouTube sayfası işlemci
+  harcamayı sürdürüyordu (ölçüm: video motoru %5,4 + uygulama %12); Android 23
+  Ekim'de uygulamayı iki kez "aşırı CPU" ile kapattı. Artık sayfa donduruluyor
+  (ölçüm: ~%0); uygulamaya dönünce ya da video başlayınca çözülüyor.
+- **Ekran kapalıyken daha seyrek denetim:** ekran kapalıyken ya da uygulama
+  arka plandayken sayfadaki 300 ms'lik döngü ve görsel temizlik durdu,
+  denetimleri saniyede bir Android tarafı yürütüyor. Kazanç küçük (video
+  motorunda ~%1).
+- **Bilinen, önlenemeyen:** MIUI/HyperOS ekran kapalıyken 10 dakikada %2'den
+  fazla işlemci kullanan video motorunu öldürüyor ("ScreenOffCPUCheckKill";
+  9 gecenin 8'inde, oynatmadan ~40-50 dk sonra; pil muafiyetine bakmıyor).
+  Ekran kapalıyken çalarken video motoru ~%23 kullanıyor, çoğu YouTube'un
+  kendi kodu ve video çözme; sayfa "görünür" tutulmazsa ses durduğu için bu
+  düşürülemiyor. Kurtarma her seferinde 2-6 sn'de kaldığı yerden sesli sürdü.
+
 ## v1.17 — 13 Ekim 2026
 - **Kurtarma freni ölü görünüm bırakmıyor (A9):** 2 dk içinde ikinci kez video
   motoru ölürse önceden kurtarma tamamen atlanıyor, ölü WebView ekranda kalıyordu

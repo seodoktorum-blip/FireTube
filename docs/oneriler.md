@@ -93,6 +93,7 @@ Toplam 22 öneri doğrulamadan geçti. Aynı konudakileri birleştirince 18 madd
   - Sonra androidx.webkit (en az 1.9.0) eklensin. Destekleniyorsa `WebViewCompat.addDocumentStartJavaScript` kullanılsın; HTML'i yeniden yazma yolu yedek olarak kalsın.
   - Kurallar güncellenince script yeniden kaydedilsin.
 - **Dikkat:** Derleme `--offline` yapıldığı için bağımlılık bir kez çevrimiçi indirilmeli. YouTube'un güvenlik başlıkları (CSP) artık yürürlüğe girer; giriş-çıkış ve inject.js telefonda denenmeli.
+- **Durum (v1.18, 26 Eki):** ölçüldü — 15–26 Eki arasında 1 kez görüldü (24 Eki 03:02, kurtarmada DNS çözülemedi; WebView 2 sn sonra açabildi). Hafif çözüm yapıldı: bağlantı kurulamazsa 2 sn arayla 2 yeniden deneme. Günlükte "ön script N. denemede eklendi" / "UYARI: ön script eklenemedi (... 3 deneme)" izlensin; yine görülürse asıl çözüme (addDocumentStartJavaScript) geçilsin.
 
 **A9. Kurtarma freni ölü WebView'i ekranda bırakıyor** · S · düşük · `MainActivity.java:336-343, 363-368`
 - **Neden:** 120 sn içinde ikinci kez renderer ölürse `rebuildWebView` yalnız log yazıp dönüyor. Ölü WebView ekranda ve `web` alanında kalıyor. Servis çalışmıyorsa kullanıcı siyah bir sayfaya dönüyor; aşağı çekip yenileme de bu ölü sayfayı kullanıyor.

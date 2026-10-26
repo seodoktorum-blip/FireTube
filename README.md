@@ -17,7 +17,10 @@ A minimal, ad-free YouTube player for people who fall asleep listening to videos
 - **Kendi kendine iyileşme:**
   - Video motoru (renderer) çökerse WebView sıfırdan kurulur, video kaldığı yerden devam eder.
   - Sayfa 2 dakika yanıt vermezse aynı kurtarma devreye girer.
-  - Akış takılınca önce dürtülür, düzelmezse sayfa yenilenir.
+  - Akış takılınca önce dürtülür, 2,5 dakikada düzelmezse sayfa yenilenir.
+  - Sayfa açılırken bağlantı kurulamazsa ön script birkaç saniye arayla yeniden denenir (ön scriptsiz sayfa reklam verisi alır).
+  - Not: MIUI/HyperOS ekran kapalıyken çok işlemci kullanan video motorunu gece bir kez öldürebiliyor (pil muafiyeti bunu önlemiyor); uygulama birkaç saniyede kaldığı yerden sürdürür.
+- **Arka planda dondurma:** video çalmıyorken uygulama arka plandaysa (servis kapandıktan sonra) sayfa dondurulur, işlemci ve pil harcamaz; uygulamaya dönünce kaldığı gibi açılır.
   - **Döngü freni:** otomatik yenilemeler 10 dakikada en fazla 3 kez — yanlış tetikleme bile gece boyu kesinti yaratamaz.
 - **YouTube'un ayarlarına saygı:** autoplay'in kapalıysa video bitince durur; uygulama kendi başına sıradaki videoya **geçmez**.
 - **Uyku zamanlayıcı:** 🛡 rozetinden 15–120 dk ya da **"Bu video bitince dur"** seç. Son 60 saniyede ses yavaşça kısılır, süre bitince video durur ve **durmuş kalır** (otomatik devam, autoplay ya da sayfa yenilenmesi geri başlatmaz).

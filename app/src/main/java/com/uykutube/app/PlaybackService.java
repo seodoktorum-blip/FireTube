@@ -586,6 +586,10 @@ public class PlaybackService extends Service {
         if (inst != null) c.stopService(new Intent(c, PlaybackService.class));
     }
 
+    static boolean isRunning() {
+        return inst != null;
+    }
+
     public static void setTimer(long minutes) {
         timerEndAt = minutes <= 0 ? 0L : System.currentTimeMillis() + minutes * 60000L;
         PlaybackService s = inst;
@@ -673,7 +677,10 @@ public class PlaybackService extends Service {
         if (wifiLock != null && wifiLock.isHeld()) wifiLock.release();
         AppLog.write(this, "SERVIS: durdu");
         MainActivity a = MainActivity.instance;
-        if (a != null) a.updateChip();
+        if (a != null) {
+            a.updateChip();
+            a.maybeFreezeWeb();
+        }
         super.onDestroy();
     }
 

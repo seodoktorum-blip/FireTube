@@ -715,6 +715,10 @@
       lastNudgeAt = Date.now();
       say('akış takıldı (' + Math.round(stuckMs / 1000) + ' sn) — dürtülüyor');
       try { v.currentTime = pos + 0.25; } catch (e) {}
+      // Dürtmenin kendi atlaması ilerleme sayılmasın: sayılınca sayaç her
+      // dürtmede sıfırlanıyor, 150 sn'lik yenilemeye hiç varılmıyordu
+      // (24 Eki: reklamdan sonra yüklenmeyen videoda 58 dk sessizlik).
+      lastPos = v.currentTime;
       var p = v.play();
       if (p && p.catch) p.catch(function () {});
     } else if (stuckMs > 150000) {
@@ -765,7 +769,20 @@
     for (var i = 0; i < CHECKS.length; i++) run(CHECKS[i][0], CHECKS[i][1]);
   }
 
+  /* Ekran kapalı / uygulama arka planda (Android __uykuBackground ile bildirir):
+     denetimleri Android'in saniyelik tiki yürütür; 300 ms'lik döngü ve görsel
+     temizlik boşa CPU — MIUI ekran kapalıyken 10 dk'da %2'yi aşan renderer'ı
+     öldürüyor. Servis kapalıysa (tik yok) 5 sn'de bir yedek tur atılır. */
+  var bgMode = false, lastBgRun = 0;
+  window.__uykuBackground = function (on) { bgMode = !!on; };
+
   function tickChecks() {
+    if (bgMode) {
+      if (Date.now() - lastBgRun < 5000) return;
+      lastBgRun = Date.now();
+      runChecks();
+      return;
+    }
     runChecks();
     run('clutter', hideClutter);
     run('openapp', hideOpenApp);

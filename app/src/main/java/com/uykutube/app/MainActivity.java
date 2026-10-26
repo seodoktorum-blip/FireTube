@@ -236,6 +236,37 @@ public class MainActivity extends Activity {
        preinject.js'i gömer ve değiştirilmiş belgeyi döndürür. Hata olursa
        null döner ve WebView normal şekilde yükler. */
     private WebResourceResponse rewriteHtml(String urlStr) {
+        long start = android.os.SystemClock.elapsedRealtime();
+        for (int attempt = 1; ; attempt++) {
+            try {
+                WebResourceResponse r = rewriteHtmlOnce(urlStr);
+                if (attempt > 1 && r != null) appLog("ön script " + attempt + ". denemede eklendi");
+                return r;
+            } catch (Exception e) {
+                // Bağlantı kurulamadıysa kısa arayla yeniden dene: gece kurtarmasında
+                // ağ birkaç sn geç gelebiliyor (24 Eki: DNS çözülemedi, WebView 2 sn
+                // sonra açabildi) ve ön scriptsiz sayfa tüm oturum reklam verisi alır.
+                boolean noConnection = e instanceof java.net.UnknownHostException
+                        || e instanceof java.net.ConnectException
+                        || e instanceof java.net.NoRouteToHostException;
+                if (noConnection && attempt < 3 && android.os.SystemClock.elapsedRealtime() - start < 25_000) {
+                    Log.w(TAG, "html yeniden yazma: bağlantı yok (" + e.getMessage() + ") — yeniden denenecek");
+                    android.os.SystemClock.sleep(2000);
+                    continue;
+                }
+                Log.w(TAG, "html yeniden yazma başarısız (" + e.getMessage() + ") — normal yükleme");
+                long now = System.currentTimeMillis();
+                if (now - lastRewriteFailLogAt > 60_000) {
+                    lastRewriteFailLogAt = now;
+                    appLog("UYARI: ön script eklenemedi (" + e.getClass().getSimpleName() + ": "
+                            + e.getMessage() + ", " + attempt + " deneme) — sayfa ön scriptsiz açılıyor");
+                }
+                return null;
+            }
+        }
+    }
+
+    private WebResourceResponse rewriteHtmlOnce(String urlStr) throws Exception {
         java.net.HttpURLConnection c = null;
         try {
             java.net.URL url = new java.net.URL(urlStr);
@@ -280,15 +311,6 @@ public class MainActivity extends Activity {
             html = html.substring(0, gt + 1) + "<script>" + filter.bootScript() + holdBootScript()
                     + preinjectSrc + "</script>" + html.substring(gt + 1);
             return htmlResponse(html);
-        } catch (Exception e) {
-            Log.w(TAG, "html yeniden yazma başarısız (" + e.getMessage() + ") — normal yükleme");
-            long now = System.currentTimeMillis();
-            if (now - lastRewriteFailLogAt > 60_000) {
-                lastRewriteFailLogAt = now;
-                appLog("UYARI: ön script eklenemedi (" + e.getClass().getSimpleName() + ": "
-                        + e.getMessage() + ") — sayfa ön scriptsiz açılıyor");
-            }
-            return null;
         } finally {
             if (c != null) c.disconnect();
         }
@@ -398,6 +420,7 @@ public class MainActivity extends Activity {
                 // yeni sayfa kalite kipini bilmez: her yüklemede bildirilir
                 if (qualityLow == null) updateQualityMode();
                 else pushQualityMode();
+                pushBackgroundMode();
                 // Önceki duraklatma (zamanlayıcı, telefon, kullanıcı...) yeni sayfada da
                 // geçerli: ön script gömülemediyse inject sonrası burada uygulanır
                 // Belge başına YALNIZ bir kez karar verilir: onPageFinished SPA içi geri
@@ -508,6 +531,11 @@ public class MainActivity extends Activity {
             }
             bridgeHandler.removeCallbacks(loadPending);
             createWebView();
+            if (webFrozen) {
+                // zamanlayıcı duraklatması süreç geneli: yeni sayfa donuk açılmasın
+                webFrozen = false;
+                try { web.resumeTimers(); } catch (Exception ignored) {}
+            }
             if (wait > 0) {
                 appLog("KURTARMA: çok sık — ölü görünüm değiştirildi, sayfa "
                         + (wait / 1000) + " sn sonra yüklenecek");
@@ -573,6 +601,7 @@ public class MainActivity extends Activity {
                 return;
             }
             PlaybackService.stop(MainActivity.this);
+            maybeFreezeWeb(); // servis çalışıyorduysa onDestroy'u dondurur
         }
     };
     private final Runnable netRetry = this::retryAfterNetError;
@@ -585,6 +614,7 @@ public class MainActivity extends Activity {
                 videoPlaying = playing;
                 PlaybackService.onPlayState(playing);
                 if (playing) {
+                    unfreezeWeb("video başladı");
                     bridgeHandler.removeCallbacks(delayedServiceStop);
                     if (!screenReleased) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                     askNotifPermissionOnce();
@@ -837,7 +867,7 @@ public class MainActivity extends Activity {
        bağlar; ekran her açıldığında otomatik uygulanır. */
     public void kickWebViewSurface() {
         runOnUiThread(() -> {
-            if (web == null || isFinishing() || isDestroyed()) return;
+            if (web == null || isFinishing() || isDestroyed() || webFrozen) return;
             // Tam ekranda video customView'da çizilir; WebView'i söküp görünür
             // yapmak tam ekrandan çıkarabilir/üstüne binebilir — dokunma.
             if (customView != null) return;
@@ -866,10 +896,34 @@ public class MainActivity extends Activity {
         });
     }
 
+    /* Arka planda, video çalmıyorken ve servis kapalıyken sayfa dondurulur:
+       duraklatılmış/biten YouTube sayfası arka planda CPU harcamayı sürdürüyor,
+       Android uygulamayı bu yüzden "aşırı CPU" ile kapatıyordu (23 Eki: 5 dk'da
+       %12). Ekrandayken ya da çalarken dondurulmaz (ses ekran kapalıyken sürmeli). */
+    private boolean webFrozen = false;
+
+    void maybeFreezeWeb() {
+        if (webFrozen || web == null || isFinishing() || isDestroyed()) return;
+        if (activityStarted || videoPlaying || PlaybackService.isRunning()) return;
+        webFrozen = true;
+        try { web.onPause(); } catch (Exception ignored) {}
+        try { web.pauseTimers(); } catch (Exception ignored) {}
+        appLog("DONDURMA: arka planda ve çalmıyor — sayfa donduruldu");
+    }
+
+    private void unfreezeWeb(String why) {
+        if (!webFrozen || web == null) return;
+        webFrozen = false;
+        try { web.onResume(); } catch (Exception ignored) {}
+        try { web.resumeTimers(); } catch (Exception ignored) {}
+        appLog("DONDURMA: çözüldü (" + why + ")");
+    }
+
     @Override
     protected void onStart() {
         super.onStart();
         activityStarted = true;
+        unfreezeWeb("öne geldi");
         updateQualityMode();
         if (stoppedAt > 0) {
             long away = android.os.SystemClock.elapsedRealtime() - stoppedAt;
@@ -887,6 +941,7 @@ public class MainActivity extends Activity {
         appLog("YASAM: arka plana geçti (ekran " + (((PowerManager) getSystemService(POWER_SERVICE))
                 .isInteractive() ? "açık" : "kapalı") + ")");
         updateQualityMode();
+        maybeFreezeWeb();
     }
 
     /* --- Siyah ekran teşhisi: davranışı değiştirmez, yalnız ölçer ve yazar ---
@@ -966,11 +1021,20 @@ public class MainActivity extends Activity {
     /* Ekran kapalı ya da uygulama arka plandayken en düşük kalite. Kilit
        ekranı açıkken (ekran açık, kilit duruyor) eski kaliteye dönülür:
        YouTube yeni kaliteye ~25-30 sn'de geçtiği için kilit açılırken hazır olsun.
-       Kip değişince sayfaya iletilir; PlaybackService her tikte çağırır. */
+       Kip değişince sayfaya iletilir; PlaybackService her tikte çağırır.
+       Aynı yerde arka plan kipi de izlenir (ekran kapalı ya da uygulama arka
+       planda): sayfa o sırada sık denetim ve görsel temizliği bırakır. */
+    private Boolean backgroundMode = null;
+
     void updateQualityMode() {
+        boolean interactive = ((PowerManager) getSystemService(POWER_SERVICE)).isInteractive();
+        boolean bg = !interactive || !activityStarted;
+        if (backgroundMode == null || backgroundMode != bg) {
+            backgroundMode = bg;
+            pushBackgroundMode();
+        }
         boolean low = false;
         if (prefLowQuality) {
-            boolean interactive = ((PowerManager) getSystemService(POWER_SERVICE)).isInteractive();
             boolean locked = ((android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE)).isKeyguardLocked();
             low = !interactive || (!activityStarted && !locked);
         }
@@ -984,6 +1048,12 @@ public class MainActivity extends Activity {
     private void pushQualityMode() {
         if (web != null && qualityLow != null) {
             web.evaluateJavascript("window.__uykuLowQuality && window.__uykuLowQuality(" + qualityLow + ")", null);
+        }
+    }
+
+    private void pushBackgroundMode() {
+        if (web != null && backgroundMode != null) {
+            web.evaluateJavascript("window.__uykuBackground && window.__uykuBackground(" + backgroundMode + ")", null);
         }
     }
 

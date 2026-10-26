@@ -1,9 +1,9 @@
-Şu an: v1.17 push edildi | Son yapılan: commit + push | Sıradaki: yok (A8 için günlükte 'ön script eklenemedi' izlensin)
+Şu an: v1.18, adım 6 | Son yapılan: v1.18 kodlandı, telefonda ölçüldü/doğrulandı, belgeler güncel | Sıradaki: commit + push (kullanıcı isterse); sonra gece günlüğü izlensin (KURTARMA sonrası takılma/ön script)
 
 # FireTube — plan
 
-Derleme: `tools/gradle-9.8.0/bin/gradle assembleRelease --offline -q` (ya da `./gradlew assembleRelease`)
-Testler: `:app:testDebugUnitTest` + `node app/src/test/js/preinject.test.js`
+Derleme: `tools/gradle-9.8.0/bin/gradle assembleRelease --offline -q` (ya da `./gradlew assembleRelease`). GRADLE_USER_HOME=Y:\cache\gradle (26 Eki bir kez çevrimiçi dolduruldu)
+Testler: `:app:testDebugUnitTest` + `node app/src/test/js/preinject.test.js` + `node app/src/test/js/inject-stall.test.js`
 Öneri kaynağı: docs/oneriler.md (A*/B* kodları oradan)
 
 ## v1.13 (Faz 1–4) ✅ (ayrıntı: docs/done-phases.md)
@@ -31,7 +31,26 @@ Kök neden 1: SwipeRefreshLayout eski WebView'i ölçüyordu (kurtarmada yeni We
 - [x] Derleme + telefonda doğrulama + CHANGELOG
 - [x] Commit + push (seodoktorum-blip hesabıyla)
 
+# v1.18 — gece sağlamlığı (26 Eki 2026, kaynak: 26 Eki günlük kontrolü)
+- [x] 1. Takılma bekçisi: dürtme ilerleme sayılmasın → 150 sn'de yenileme gerçekten olsun (inject.js handleBufferStall). Test: inject-stall.test.js (eski kodla başarısız: 8 dürtme, yenileme yok; yenisiyle 151. sn). Telefonda taklit güvenilmez (hız 0 → YouTube sayfayı kendi yeniledi)
+- [x] 2. Ön script: bağlantı hatasında kısa arayla yeniden deneme (A8'in hafif hâli; rewriteHtml → rewriteHtmlOnce, 3 deneme/2 sn/25 sn bütçe)
+- [x] 3. Ekran kapalıyken CPU: renderer CPU'sunu ölç (önce/sonra), denetimleri seyrelt
+  - [x] Ölçüm (26 Eki, ekran kapalı, 144p, yağmur videosu): renderer %24-26 (CrRendererMain %11,5, Media %6,6), uygulama %43-54 (ana iş parçacığı %14, MediaCodec %7). JS profili: çoğu YouTube (base.js, ytmweb); bizimki küçük pay
+  - Neden yüksek: KeepAliveWebView pencereyi hep görünür sayıyor (bilinçli: gizlenince ses durur) → Chromium arka plan iyileştirmelerini (video izi kapatma, zamanlayıcı kısma) yapmıyor. Bu yüzden MIUI öldürmesi tamamen önlenemeyebilir; kurtarma (1, 2) asıl güvence
+  - [x] Kod: ekran kapalı/arka planda 300 ms döngü ve görsel temizlik durur (__uykuBackground; Android tiki sürer, servis yoksa 5 sn'de yedek tur)
+  - [x] Önce/sonra (aynı oturum, 120 sn): renderer %23,2 → %22,9 (CrRendererMain %12,1 → %10,9). Kazanç ~%1; MIUI öldürmesi önlenemez, kabul edildi
+- [x] 4. Servis durunca ve arka plandayken WebView'i dondur (maybeFreezeWeb/unfreezeWeb, günlükte DONDURMA). Telefonda: duraklatılmış+servis açık renderer %5,4/uygulama %12 → donunca ~%0/%0,1; ekran açılınca 'çözüldü', sayfa normal, dokunuşla oynatma çalıştı
+- [x] 5. Derleme + testler + telefonda doğrulama + CHANGELOG/README/oneriler(A8 durumu) + sürüm 1.18 (versionCode 19)
+- [ ] 6. Commit + push (kullanıcı isterse, seodoktorum-blip hesabıyla)
+
 ## Açık işler
 - [ ] `./gradlew` ilk çalıştırmada Gradle 9.8.0 dağıtımını indirir (yerelde denenmedi)
 - Bilinçli bırakılan: release `debuggable=true` (run-as günlük + update-filters.bat için)
-- Kapsam dışı (docs/oneriler.md): A8, A9, A10, A11, B4, B7 (A4 duraklatma kilidiyle büyük ölçüde çözüldü)
+- Kalan öneri (docs/oneriler.md): A8 — günlükte 'ön script eklenemedi' görülürse. (A4 duraklatma kilidiyle büyük ölçüde çözüldü; A9/A10/A11/B4/B7 yapıldı)
+- Günlük kontrolü 15 Eki (13 Eki 09:37 → 15 Eki 10:08, 803 satır): HATA/UYARI/SIYAH-TEST 0, reklam sızıntısı 0, AG 0. 1 renderer ölümü (15 Eki 02:38, video bittikten 10 sn sonra) → kurtarma doğru. Kapanmalar: çoğu SwipeUpClean (kullanıcı), 1 DUSUK_BELLEK (arka planda), WebView 153→155 güncellemesi. Gece autoplay'de YouTube her yeni videoyu sessiz+duraklatılmış başlatıyor; checkAutoMuted + autoStart her seferinde düzeltti (00:44–01:25 kesintisiz). Kulaklık çıkınca duraklatma çalıştı (01:25).
+- Günlük kontrolü 26 Eki (15 Eki 10:08 → 26 Eki 12:05, 2252 satır, telefona kablosuz adb 192.168.8.2): HATA/SIYAH 0; telefon (21 Eki) ve kulaklık duraklatması doğru. Bulunan sorunlar (v1.18 adayları):
+  - [ ] Takılma bekçisi kendi dürtmesini ilerleme sanıyor: `currentTime = pos + 0.25` > 0,2 eşiği → sayaç sıfırlanıyor, 150 sn yenilemesine hiç varılmıyor. 24 Eki 04:04–05:02 58 dk sessizlik (reklamdan sonra sıradaki video rs=0, süre 0). Düzeltme: dürtmeden sonra lastPos = yeni konum
+  - [ ] A8 tetiklendi: 24 Eki 03:02 kurtarmada DNS çözülemedi (UnknownHost, 12 sn) → ön scriptsiz sayfa → 04:02 reklam → yukarıdaki takılma. WebView 2 sn sonra sayfayı açabildi → önce basit çözüm: bağlantı hatasında birkaç sn arayla 2-3 yeniden deneme
+  - [ ] MIUI `ScreenOffCPUCheckKill` (ekran kapalı 10 dk'da ~%7 CPU, sınır %2) her gece ~40-50 dk sonra renderer'ı öldürüyor (9 gecenin 8'i; 15 Eki 02:38 da buymuş). Uygulama pil muafiyetinde (deviceidle user whitelist, RUN_ANY_IN_BACKGROUND allow) ama bu denetim muafiyete bakmıyor. Kurtarma her seferinde 2-6 sn'de sesli devam etti. Ekran kapalıyken renderer CPU'su ölçülüp saniyelik kontroller seyreltilebilir
+  - [ ] Küçük: duraklatılmış/biten sayfa arka planda CPU yakıyor → 23 Eki 2 kez EXCESSIVE CPU ile kapatıldı (5 dk'da %12). Servis durunca ve arka plandaysa WebView dondurulabilir
+  - Not: ana sayfada önizlemeler duraklayınca "kullanıcı duraklattı" günlük gürültüsü (145 satır), zararsız
