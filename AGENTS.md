@@ -1,4 +1,4 @@
-Şu an: v1.18, adım 6 | Son yapılan: v1.18 kodlandı, telefonda ölçüldü/doğrulandı, belgeler güncel | Sıradaki: commit + push (kullanıcı isterse); sonra gece günlüğü izlensin (KURTARMA sonrası takılma/ön script)
+Şu an: v1.18, izleme | Son yapılan: v1.18 commit + push (e8786f4) | Sıradaki: gece günlüğü izlensin (KURTARMA sonrası takılma yenilemesi, 'ön script N. denemede', DONDURMA)
 
 # FireTube — plan
 
@@ -41,7 +41,7 @@ Kök neden 1: SwipeRefreshLayout eski WebView'i ölçüyordu (kurtarmada yeni We
   - [x] Önce/sonra (aynı oturum, 120 sn): renderer %23,2 → %22,9 (CrRendererMain %12,1 → %10,9). Kazanç ~%1; MIUI öldürmesi önlenemez, kabul edildi
 - [x] 4. Servis durunca ve arka plandayken WebView'i dondur (maybeFreezeWeb/unfreezeWeb, günlükte DONDURMA). Telefonda: duraklatılmış+servis açık renderer %5,4/uygulama %12 → donunca ~%0/%0,1; ekran açılınca 'çözüldü', sayfa normal, dokunuşla oynatma çalıştı
 - [x] 5. Derleme + testler + telefonda doğrulama + CHANGELOG/README/oneriler(A8 durumu) + sürüm 1.18 (versionCode 19)
-- [ ] 6. Commit + push (kullanıcı isterse, seodoktorum-blip hesabıyla)
+- [x] 6. Commit + push: e8786f4 (seodoktorum-blip hesabıyla)
 
 ## Açık işler
 - [ ] `./gradlew` ilk çalıştırmada Gradle 9.8.0 dağıtımını indirir (yerelde denenmedi)
