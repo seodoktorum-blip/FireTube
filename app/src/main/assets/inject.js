@@ -7,6 +7,8 @@
 
   var q = function (s) { return document.querySelector(s); };
   var say = function (m) { try { if (window.FireTube) window.FireTube.log(m); } catch (e) {} };
+  // Android TV kutusu (Android tarafı bildirir): kumanda gezinmesi ve hız ayarları
+  var TV = !!window.__uykuTv;
 
   // Her denetimin hatası bir kez günlüğe yazılır: tek try içinde bir denetimin
   // hatası diğer bekçileri de sessizce susturuyordu.
@@ -142,7 +144,15 @@
   // Kilit açıkken dokunuşsuz play → hemen geri duraklat (diğer play
   // dinleyicilerinden ÖNCE kaydedilir; Android'e "çalıyor" sinyali gitmesin)
   document.addEventListener('play', function (e) {
-    if (!holdPause || !e.target || e.target.tagName !== 'VIDEO') return;
+    if (!e.target || e.target.tagName !== 'VIDEO') return;
+    // TV: akıştaki sessiz önizlemeler zayıf kutuda boşuna video çözer; yalnız
+    // izleme ve Shorts sayfasında oynatılır
+    if (TV && e.target.muted && !/^\/(watch|shorts)/.test(location.pathname)) {
+      try { e.target.pause(); } catch (x) {}
+      e.stopImmediatePropagation();
+      return;
+    }
+    if (!holdPause) return;
     if (Date.now() - (window.__uykuUserPlayAt || 0) < 5000) { holdPause = false; return; }
     try { e.target.pause(); } catch (x) {}
     e.stopImmediatePropagation();
@@ -498,7 +508,8 @@
     else if (Date.now() - lastUser < 3000) userMuted = true; // YouTube'un sessiz düğmesine dokunuldu
   }, true);
   function checkAutoMuted() {
-    if (location.pathname !== '/watch' || adActive || userMuted) return;
+    // Shorts da: bağlantıyla (dokunuşsuz) açılan ilk kısa video sessiz başlıyordu
+    if (!/^\/(watch$|shorts\/)/.test(location.pathname) || adActive || userMuted) return;
     var v = q('video');
     if (!v || !v.muted || v.paused) return;
     var p = player();
@@ -758,12 +769,363 @@
     } catch (e) {}
   }
 
+  /* ---- Android TV kutusu: kumanda ----
+     Kutu dokunmatik ekranı var diye bildirdiği için WebView'in kendi uzamsal
+     gezinmesi kapalıydı: yön tuşları sayfada hiçbir şeyi seçmiyordu.
+     - Yön tuşları en yakın tıklanabilir öğeye geçer (mavi çerçeve), Tamam tıklar.
+       Açık bir menü/alt sayfa varsa gezinme onun içinde kalır. Üst çubuktan
+       da yukarı basılınca odak 🛡 rozetine (uygulama menüsü) geçer.
+     - İzleme sayfası tam ekran açılır: Tamam oynat/duraklat, sol/sağ 10 sn
+       (basılı tutunca 30 sn), yukarı süreyi gösterir, aşağı ve Geri tam
+       ekrandan çıkar (oynatıcı seçili kalır, Tamam yeniden tam ekran).
+     - Zayıf kutuda sürekli CSS animasyonları ekran çizimini boşta %25
+       işlemciyle meşgul ediyordu: animasyonlar anlık yapılır. */
+  var TV_SEL = 'a[href],button,input,textarea,select,[role="button"],[role="link"],[role="tab"],' +
+      '[role="menuitem"],[role="option"],[role="checkbox"],[role="radio"],[tabindex]:not([tabindex="-1"])';
+  var TV_DIRS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+                  Up: 'up', Down: 'down', Left: 'left', Right: 'right' };
+  var TV_CODES = { 37: 'left', 38: 'up', 39: 'right', 40: 'down' };
+  var tvCur = null, tvFull = false, tvPath = location.pathname, tvAutoFor = null, tvOsdTimer = 0;
+  var tvColX = null;
+
+  function tvSetup() {
+    var st = document.createElement('style');
+    st.id = 'uyku-tv';
+    st.textContent =
+      '*,*::before,*::after{animation-duration:.001s!important;animation-iteration-count:1!important;' +
+      'animation-delay:0s!important;transition-duration:.001s!important;transition-delay:0s!important}' +
+      '#uyku-odak-kutu{position:fixed;z-index:2147483500;pointer-events:none;box-sizing:border-box;' +
+      'border:4px solid #3ea6ff;border-radius:12px;box-shadow:0 0 0 2px rgba(0,0,0,.6),0 0 18px rgba(62,166,255,.6);display:none}' +
+      'html.uyku-tam,html.uyku-tam body{overflow:hidden!important}' +
+      'html.uyku-tam #player-container-id{position:fixed!important;left:0!important;top:0!important;' +
+      'width:100vw!important;height:100vh!important;max-height:none!important;margin:0!important;' +
+      'padding:0!important;transform:none!important;z-index:2147483000!important;background:#000!important}' +
+      'html.uyku-tam #player-container-id #player,html.uyku-tam #movie_player,html.uyku-tam .html5-video-container' +
+      '{width:100%!important;height:100%!important;max-height:none!important;padding:0!important}' +
+      'html.uyku-tam #movie_player video{width:100%!important;height:100%!important;left:0!important;' +
+      'top:0!important;object-fit:contain!important}' +
+      '#uyku-osd{position:fixed;left:50%;bottom:8%;transform:translateX(-50%);z-index:2147483600;' +
+      'background:rgba(0,0,0,.75);color:#fff;font:500 22px Roboto,Arial,sans-serif;padding:10px 22px;' +
+      'border-radius:24px;pointer-events:none;display:none;white-space:nowrap}';
+    (document.head || document.documentElement).appendChild(st);
+    window.addEventListener('keydown', tvKey, true);
+    // seçim çerçevesi kaydırmada öğeyle birlikte gitsin (iç kaydırma alanları dahil)
+    window.addEventListener('scroll', tvPlace, { capture: true, passive: true });
+    window.addEventListener('resize', tvPlace);
+  }
+
+  /* Seçim çerçevesi ayrı bir kutu: öğenin kendi outline'ı video katmanının
+     altında kalıyor, kartlarda da taşma gizlemesiyle kırpılıyordu. */
+  var tvBox = null, tvAway = false;
+  function tvPlace() {
+    if (!TV) return;
+    if (!tvBox || !document.contains(tvBox)) {
+      tvBox = document.createElement('div');
+      tvBox.id = 'uyku-odak-kutu';
+      document.documentElement.appendChild(tvBox);
+    }
+    var r = tvCur && !tvFull && !tvAway && document.contains(tvCur) ? tvRect(tvCur) : null;
+    if (!r || r.width < 1 || r.height < 1) { tvBox.style.display = 'none'; return; }
+    tvBox.style.cssText = 'display:block;left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width
+        + 'px;height:' + r.height + 'px';
+  }
+
+  function tvOnWatch() { return location.pathname === '/watch' && !!q('video'); }
+  function tvPlayerEl() { return q('#player-container-id') || player(); }
+  function tvRect(el) { return el.getBoundingClientRect(); }
+  function tvUsable(el, r) {
+    return r.width >= 6 && r.height >= 6 && !el.disabled && !el.closest('[aria-hidden="true"],[hidden]');
+  }
+  // Sabit üst/alt çubuk: içerikte gezinirken yalnız o yönde başka öğe yoksa seçilir
+  function tvBar(el) {
+    if (el.closest('ytm-pivot-bar-renderer')) return 'alt';
+    return el.closest('ytm-mobile-topbar-renderer,#header-bar,ytm-feed-filter-chip-bar-renderer') ? 'ust' : '';
+  }
+  function tvScope() {
+    // (ytm-bottom-sheet-renderer menüyü açan düğmenin sarmalayıcısı: katman değil)
+    var m = document.querySelectorAll('[role="dialog"],bottom-sheet-container,dialog[open],' +
+        'ytm-menu-popup-renderer,tp-yt-iron-dropdown');
+    for (var i = m.length - 1; i >= 0; i--) {
+      var r = tvRect(m[i]);
+      if (r.width > 100 && r.height > 60 && m[i].querySelector(TV_SEL)) return m[i];
+    }
+    return document;
+  }
+  // Video kartı tek durak: içindeki başlık, ⋮ ve kanal resmi ayrı ayrı seçilince
+  // aşağı/yukarı çapraz kayıyordu. Tamam kartın bağlantısını açar.
+  var TV_CARDS = 'ytm-rich-item-renderer,yt-lockup-view-model,ytm-video-with-context-renderer,' +
+      'ytm-compact-video-renderer,ytm-media-item,ytm-compact-radio-renderer,ytm-compact-playlist-renderer,' +
+      'ytm-shorts-lockup-view-model,ytm-shorts-lockup-view-model-v2,ytm-reel-item-renderer,' +
+      'ytm-playlist-video-renderer,ytm-compact-channel-renderer,ytm-backstage-post-thread-renderer';
+  function tvCandidates() {
+    var scope = tvScope();
+    var raw = scope.querySelectorAll(TV_SEL), list = [], cards = [];
+    for (var i = 0; i < raw.length; i++) {
+      // raf başlığındaki ⋮ (ör. Shorts rafı): gereksiz durak, aşağı inerken araya giriyordu
+      if (/^(daha fazla işlem|işlem menüsü|more actions|action menu)$/i.test(raw[i].getAttribute('aria-label') || '')
+          && raw[i].closest('yt-section-header-view-model,yt-shelf-header-layout')) continue;
+      var card = scope === document ? raw[i].closest(TV_CARDS) : null;
+      if (!card) list.push(raw[i]);
+      else if (cards.indexOf(card) < 0) { cards.push(card); list.push(card); }
+    }
+    var pl = scope === document && tvOnWatch() ? tvPlayerEl() : null;
+    if (pl) {
+      // oynatıcının kendi düğmeleri yerine oynatıcı tek öğe: tuşları biz yönetiyoruz
+      list = list.filter(function (el) { return !pl.contains(el); });
+      list.push(pl);
+    }
+    return list;
+  }
+  function tvDefault(list) {
+    if (tvOnWatch()) return tvPlayerEl();
+    var best = null, bs = Infinity, big = false;
+    for (var i = 0; i < list.length; i++) {
+      var el = list[i], r = tvRect(el);
+      if (!tvUsable(el, r) || tvBar(el) || r.bottom < 0 || r.top > innerHeight) continue;
+      // önce büyük öğeler (video kartları), yoksa ilk görünen öğe
+      var isBig = r.width * r.height >= 10000;
+      if (big && !isBig) continue;
+      var s = r.top * 4 + r.left;
+      if ((isBig && !big) || s < bs) { bs = s; best = el; big = big || isBig; }
+    }
+    return best;
+  }
+  function tvSelect(el) {
+    if (!el) return;
+    if (tvCur && tvCur !== el) tvCur.classList.remove('uyku-odak');
+    tvCur = el;
+    tvAway = false;
+    el.classList.add('uyku-odak');
+    try { el.focus({ preventScroll: true }); } catch (e) {}
+    var r = tvRect(el);
+    if (r.width < innerWidth * 0.6) tvColX = r.left + r.width / 2;
+    var vOut = r.top < 0 || r.bottom > innerHeight;
+    var hOut = r.left < 0 || r.right > innerWidth;
+    if ((vOut || hOut) && !tvBar(el)) { // sabit çubuk hep görünür
+      try {
+        el.scrollIntoView({ block: vOut ? (r.height > innerHeight * 0.8 ? 'start' : 'center') : 'nearest',
+                            inline: hOut ? 'center' : 'nearest' });
+      } catch (e) {}
+    }
+    tvPlace();
+  }
+  function tvMove(dir) {
+    var list = tvCandidates();
+    if (!tvCur || !document.contains(tvCur) || !tvUsable(tvCur, tvRect(tvCur))
+        || (tvScope() !== document && !tvScope().contains(tvCur))) {
+      tvSelect(tvDefault(list));
+      return;
+    }
+    var f = tvRect(tvCur), fx = f.left + f.width / 2, fy = f.top + f.height / 2;
+    // tam genişlik bir öğeden (gönderi, raf) dikey çıkarken gelinen sütuna dönülür
+    if ((dir === 'up' || dir === 'down') && f.width >= innerWidth * 0.6 && tvColX != null) fx = tvColX;
+    var curBar = tvBar(tvCur);
+    var best = null, bs = Infinity, bar = null, bars = Infinity;
+    for (var i = 0; i < list.length; i++) {
+      var el = list[i];
+      if (el === tvCur || el.contains(tvCur) || tvCur.contains(el)) continue;
+      var r = tvRect(el);
+      if (!tvUsable(el, r)) continue;
+      var cx = r.left + r.width / 2, cy = r.top + r.height / 2, major, minor;
+      if (dir === 'down') {
+        if (cy <= fy + 1 || r.bottom <= f.bottom) continue;
+        major = Math.max(0, r.top - f.bottom); minor = Math.abs(cx - fx);
+      } else if (dir === 'up') {
+        if (cy >= fy - 1 || r.top >= f.top) continue;
+        major = Math.max(0, f.top - r.bottom); minor = Math.abs(cx - fx);
+      } else {
+        // yatayda aynı satırda kalınır (dikey örtüşme şart)
+        if (r.bottom <= f.top + 2 || r.top >= f.bottom - 2) continue;
+        if (dir === 'right') {
+          if (cx <= fx + 1 || r.right <= f.right) continue;
+          major = Math.max(0, r.left - f.right);
+        } else {
+          if (cx >= fx - 1 || r.left >= f.left) continue;
+          major = Math.max(0, f.left - r.right);
+        }
+        minor = Math.abs(cy - fy);
+      }
+      // Android FocusFinder ağırlığı: ana eksen uzaklığı 13 kat
+      var s = 13 * major * major + minor * minor;
+      var b = tvBar(el);
+      if (b && (r.bottom <= 0 || r.top >= innerHeight)) continue; // kaydırınca gizlenen sabit şerit
+      if (b && b !== curBar) {
+        // içerikten sabit çubuğa yalnız yukarı/aşağı (yanlara basınca "Siz" sekmesi açılıyordu)
+        if (dir === 'up' || dir === 'down') { if (s < bars) { bars = s; bar = el; } }
+      }
+      else if (s < bs) { bs = s; best = el; }
+    }
+    var pick = best || bar;
+    if (pick) { tvSelect(pick); return; }
+    if (dir === 'down') {
+      window.scrollBy(0, innerHeight * 0.6); // aşağıda yüklenmemiş içerik olabilir
+    } else if (dir === 'up') {
+      if (scrollY > 10) { window.scrollBy(0, -innerHeight * 0.6); return; }
+      // en üstte: uygulama menüsünün rozetine geç
+      tvAway = true;
+      tvPlace();
+      try { if (window.FireTube && window.FireTube.focusChip) window.FireTube.focusChip(); } catch (e) {}
+    }
+  }
+  function tvActivate(el) {
+    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') { el.focus(); el.click(); return; }
+    if (el.matches(TV_CARDS)) {
+      // önce videonun kendisi: kartın ilk görünür bağlantısı kanal adı olabiliyor
+      // (arama sonucunda Tamam kanal sayfasını açıyordu), küçük resim aria-hidden
+      var a = el.querySelector('a[href*="/watch"]:not([aria-hidden="true"]),a[href*="/shorts/"]:not([aria-hidden="true"])')
+          || el.querySelector('a[href*="/watch"],a[href*="/shorts/"],a[href*="/playlist"]')
+          || el.querySelector('a[href]:not([aria-hidden="true"])') || el.querySelector('a[href]');
+      if (a) { a.click(); return; }
+    }
+    el.click();
+  }
+
+  function tvFmt(s) {
+    s = Math.max(0, Math.floor(s || 0));
+    var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+    return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (x < 10 ? '0' : '') + x;
+  }
+  function tvTime(v, t) {
+    return tvFmt(t == null ? v.currentTime : t)
+        + (isFinite(v.duration) && v.duration > 0 ? ' / ' + tvFmt(v.duration) : '');
+  }
+  function tvOsd(text) {
+    var o = document.getElementById('uyku-osd');
+    if (!o) {
+      o = document.createElement('div');
+      o.id = 'uyku-osd';
+      document.documentElement.appendChild(o);
+    }
+    o.textContent = text;
+    o.style.display = 'block';
+    clearTimeout(tvOsdTimer);
+    tvOsdTimer = setTimeout(function () { o.style.display = 'none'; }, 1800);
+  }
+  function tvFullscreen(on) {
+    if (on && !tvOnWatch()) on = false;
+    if (tvFull === on) return;
+    tvFull = on;
+    document.documentElement.classList.toggle('uyku-tam', on);
+    tvPlace();
+    try { if (window.FireTube && window.FireTube.onTvFull) window.FireTube.onTvFull(on); } catch (e) {}
+    try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+    if (!on && tvOnWatch()) tvSelect(tvPlayerEl());
+  }
+  // Kullanıcı eylemi: duraklatma kilidi kalkar, oynatma kilide takılmaz
+  function tvToggle(v) {
+    window.__uykuUserPlayAt = Date.now();
+    lastUser = Date.now();
+    holdPause = false;
+    var p = player();
+    if (v.paused || v.ended) {
+      try { if (p && p.playVideo) p.playVideo(); else v.play(); } catch (e) {}
+      tvOsd('▶  ' + tvTime(v));
+    } else {
+      try { if (p && p.pauseVideo) p.pauseVideo(); else v.pause(); } catch (e) {}
+      tvOsd('❚❚  ' + tvTime(v));
+    }
+  }
+  function tvPlayerKey(k, repeat) {
+    var v = q('video');
+    if (!v) return;
+    if (k === 'enter') { tvToggle(v); return; }
+    if (k === 'down') { tvFullscreen(false); return; }
+    if (k === 'up') { tvOsd((v.paused ? '❚❚  ' : '▶  ') + tvTime(v)); return; }
+    if (adActive) return;
+    var d = (k === 'right' ? 1 : -1) * (repeat ? 30 : 10);
+    var max = isFinite(v.duration) && v.duration > 0 ? v.duration - 2 : Infinity;
+    var t = Math.max(0, Math.min(max, v.currentTime + d));
+    var p = player();
+    try { if (p && p.seekTo) p.seekTo(t, true); else v.currentTime = t; } catch (e) { v.currentTime = t; }
+    tvOsd((d > 0 ? '» ' : '« ') + tvTime(v, t));
+  }
+
+  function tvKey(e) {
+    var dir = TV_DIRS[e.key] || TV_CODES[e.keyCode];
+    var enter = e.key === 'Enter' || e.keyCode === 13;
+    if (!dir && !enter) return;
+    var ae = document.activeElement;
+    var typing = ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable);
+    if (typing && (enter || dir === 'left' || dir === 'right')) return; // yazı alanında yerel davranış
+    e.preventDefault();
+    e.stopPropagation();
+    if (tvFull) { tvPlayerKey(enter ? 'enter' : dir, e.repeat); return; }
+    // Shorts: yukarı/aşağı önceki/sonraki kısa video, Tamam oynat/duraklat
+    if (/^\/shorts\//.test(location.pathname)) {
+      if (dir === 'up' || dir === 'down') {
+        var re = dir === 'down' ? /sonraki video|next video/i : /önceki video|previous video/i;
+        var bs = document.querySelectorAll('button[aria-label],[role="button"][aria-label]');
+        for (var i = 0; i < bs.length; i++) {
+          if (re.test(bs[i].getAttribute('aria-label'))) { bs[i].click(); return; }
+        }
+      }
+      var sv = q('video');
+      if (enter && sv && (!tvCur || !document.contains(tvCur) || tvCur.contains(sv))) { tvToggle(sv); return; }
+    }
+    if (!enter) { tvMove(dir); return; }
+    var pl = tvOnWatch() ? tvPlayerEl() : null;
+    if (pl && (!tvCur || tvCur === pl || !document.contains(tvCur))) {
+      tvFullscreen(true);
+      var v = q('video');
+      if (v && v.paused) tvToggle(v);
+      return;
+    }
+    if (tvCur && document.contains(tvCur)) tvActivate(tvCur);
+    else tvMove('down');
+  }
+
+  // Android'den gelen tuşlar (medya tuşları, Geri, rozetten dönüş, arama)
+  window.__uykuTvKey = function (k) {
+    lastUser = Date.now();
+    holdPause = false;
+    if (k === 'back') {
+      if (!tvFull) return false;
+      tvFullscreen(false);
+      return true;
+    }
+    if (k === 'focus') {
+      tvAway = false;
+      tvPlace();
+      return true;
+    }
+    if (k === 'search') {
+      var b = q('ytm-mobile-topbar-renderer button[aria-label*="ara" i],ytm-mobile-topbar-renderer button[aria-label*="search" i]');
+      if (b) { b.click(); return true; }
+      return false;
+    }
+    var v = q('video');
+    if (!v || location.pathname !== '/watch') return false;
+    if (k === 'toggle') tvToggle(v); else tvPlayerKey(k, false);
+    return true;
+  };
+
+  // Sayfa değişimi: izleme sayfasına her yeni videoda tam ekran; başka sayfada çık
+  function tvCheck() {
+    if (!TV) return;
+    if (location.pathname !== tvPath) {
+      tvPath = location.pathname;
+      if (tvCur) tvCur.classList.remove('uyku-odak');
+      tvCur = null;
+    }
+    tvPlace(); // içerik sonradan yüklenip kayabilir
+    if (!tvOnWatch()) {
+      if (tvFull) tvFullscreen(false);
+      return;
+    }
+    var vid = currentVid();
+    if (vid && vid !== tvAutoFor) {
+      tvAutoFor = vid;
+      tvFullscreen(true);
+    }
+  }
+  if (TV) run('tv', tvSetup);
+
   // Oynatma denetimleri: her biri ayrı korunur (biri hata verirse diğerleri sürer)
   var CHECKS = [
     ['sweep', sweepPlayerResponse], ['gozlemci', observePlayer], ['reklam', handleAd],
     ['diyalog', handleDialogs], ['durma', handleStall], ['takilma', handleBufferStall],
     ['otobaslat', autoStart], ['videosonu', checkStopAtEnd],
-    ['kalite', checkQuality], ['sponsor', checkSponsor], ['sesac', checkAutoMuted],
+    ['kalite', checkQuality], ['sponsor', checkSponsor], ['sesac', checkAutoMuted], ['tv', tvCheck],
   ];
   function runChecks() {
     for (var i = 0; i < CHECKS.length; i++) run(CHECKS[i][0], CHECKS[i][1]);
@@ -773,16 +1135,20 @@
      denetimleri Android'in saniyelik tiki yürütür; 300 ms'lik döngü ve görsel
      temizlik boşa CPU — MIUI ekran kapalıyken 10 dk'da %2'yi aşan renderer'ı
      öldürüyor. Servis kapalıysa (tik yok) 5 sn'de bir yedek tur atılır. */
-  var bgMode = false, lastBgRun = 0;
+  var bgMode = false, lastBgRun = 0, lastFgRun = 0;
   window.__uykuBackground = function (on) { bgMode = !!on; };
 
   function tickChecks() {
+    var now = Date.now();
     if (bgMode) {
-      if (Date.now() - lastBgRun < 5000) return;
-      lastBgRun = Date.now();
+      if (now - lastBgRun < 5000) return;
+      lastBgRun = now;
       runChecks();
       return;
     }
+    // TV kutusunun zayıf işlemcisinde 300 ms yerine saniyede bir
+    if (TV && now - lastFgRun < 950) return;
+    lastFgRun = now;
     runChecks();
     run('clutter', hideClutter);
     run('openapp', hideOpenApp);

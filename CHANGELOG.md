@@ -1,5 +1,42 @@
 # Sürüm Geçmişi
 
+## v1.19 — 28 Ekim 2026
+**Android TV kutusu (kumanda) + hız + koyu tema.** X96Q kutusunda denendi
+(Android 10, 4 çekirdek 1,34 GHz, 2 GB, WebView 80).
+- **Kumandayla gezinme:** kutu dokunmatik ekranı varmış gibi bildirdiği için
+  yön tuşları sayfaya hiç gitmiyordu (odak 🛡 rozetinde kalıyordu). TV'de artık
+  yön tuşları en yakın öğeye geçer, seçili öğe mavi çerçeveyle görünür, Tamam
+  açar. Video kartları tek durak; açık menüde gezinme menünün içinde kalır.
+  Sayfanın en üstünden yukarı basınca 🛡 rozeti seçilir (uygulama menüsü);
+  kumandanın MENÜ tuşu da menüyü açar.
+- **TV'de izleme:** video tam ekran açılır. Tamam oynat/duraklat, sol/sağ
+  10 sn (basılı tutunca 30 sn) sarar, yukarı süreyi gösterir, aşağı ya da Geri
+  tam ekrandan çıkar. Shorts'ta yukarı/aşağı önceki/sonraki kısa video.
+  Kumandanın medya tuşları da çalışır. Menüye Ara, Abonelikler, Geçmiş eklendi.
+- **TV'de hız:** sayfadaki sürekli animasyonlar zayıf kutuda boşta bile
+  işlemciyi %29 meşgul ediyordu; TV'de animasyonlar anlık yapılıyor (%9).
+  Denetim döngüsü TV'de saniyede bir; akıştaki sessiz önizlemeler oynatılmıyor.
+  TV'de video başlarken her açılışta araya giren boş pil izni ekranı ve 25 dk
+  sonra ekran koruyucuya izin verme kapatıldı.
+- **Daha hızlı açılış (tüm cihazlar):** sayfa HTML'i sıkıştırılmadan
+  indiriliyordu (350 KB yerine 114 KB) ve tamamı inmeden WebView'e
+  verilmiyordu. Artık sıkıştırılmış iner ve akarak verilir: kutuda ilk görüntü
+  11,8 sn'den 6,4 sn'ye indi. Reklam listeleri açılışta düşük öncelikle işlenir.
+- **Koyu tema (tüm cihazlar):** eski WebView'ler sistemin koyu tercihini
+  sayfaya iletmiyor, YouTube açık temada kalıyordu. Uygulama YouTube'un tema
+  tercihini koyuya ayarlar; YouTube'da açık temayı açıkça seçtiysen dokunmaz.
+- **Shorts:** bağlantıyla açılan ilk kısa video sessiz başlıyordu; sesi açılır.
+
+## v1.18.1 — 28 Ekim 2026
+- **Google girişi uygulamada kalıyor:** giriş sonunda Google oturum çerezlerini
+  ülke alan adları üzerinden dağıtıyor (ör. `accounts.google.by`,
+  `google.com.tr`). Uygulama yalnız `google.com` ile bitenleri içeride
+  tutuyordu; ötekiler Chrome'a gidiyor, giriş orada bitiyor ve youtube.com
+  bağlantısı YouTube uygulamasını açıyordu (TV kutusunda görüldü). Artık
+  Google'ın tüm ülke alan adları WebView'de kalıyor. Alan adı denetimi de
+  sıkılaştı: `notyoutube.com` gibi adlar artık "youtube.com ile bitiyor"
+  sayılmıyor (yeni test: `HostsTest`).
+
 ## v1.18 — 26 Ekim 2026
 15–26 Ekim gece günlüklerinde bulunan sorunlar:
 - **Takılma bekçisi artık gerçekten yeniliyor:** akış takılınca bekçi videoyu

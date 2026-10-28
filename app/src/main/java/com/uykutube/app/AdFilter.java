@@ -163,6 +163,9 @@ final class AdFilter {
        tazelemede SIFIRDAN kurulur: listeden kalkan domain engelli kalmasin. */
     void refreshLists() {
         new Thread(() -> {
+            // ~90 bin satir ayiklanir: zayif cihazda (TV kutusu) acilista sayfa
+            // yuklemesiyle yarismasin; listeler gelene kadar kurallar zaten etkin
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
             // rules.json'da filterLists varsa onu kullan (uzaktan yapilandirilabilir)
             Rules cur = rules;
             String[] urls = cur != null && cur.filterLists.length > 0 ? cur.filterLists : DEFAULT_FILTER_LISTS;

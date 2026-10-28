@@ -33,6 +33,8 @@ A minimal, ad-free YouTube player for people who fall asleep listening to videos
 - **Kesintisiz gece:** kurtarma/yenilemede video **kaldığı saniyeden** sürer; internet kesilirse hata sayfasında kalmaz, bağlantı gelince yeniden dener. Kilitlemeden uyursan 25 dk dokunulmadığında ekranı açık tutmayı bırakır (ses sürer).
 - **Aşağı çek → yenile** (orijinal YouTube uygulamasındaki gibi), tam ekran video, geri tuşu ile gezinme, reklam sayacı.
 - **Kara kutu:** uygulama kendi günlüğünü `files/uyku.log`'a yazar (nabız + olaylar + açılışta önceki kapanma nedenleri ve WebView sürümü); logcat silinse bile gece olan biten incelenebilir.
+- **Koyu tema:** YouTube her cihazda koyu açılır (eski WebView'li TV kutularında da); YouTube ayarından açık temayı açıkça seçersen ona uyulur.
+- **Android TV kutusu:** kumandayla tam kullanım (aşağıda), TV'de hız ayarları.
 
 ## Kurulum (Android 8+)
 
@@ -46,9 +48,26 @@ Testler:
 ```
 ./gradlew :app:testDebugUnitTest      # kural/filtre ayrıştırıcıları (JUnit)
 node app/src/test/js/preinject.test.js # ön script reklam temizliği (Node)
+node app/src/test/js/inject-stall.test.js # takılma bekçisi (Node)
 ```
 
 Çıktı debug anahtarıyla imzalanır (kişisel kullanım için kurulabilir).
+
+### Android TV kutusu (kumanda)
+
+TV'de (Android TV / TV kutusu) uygulama kendiliğinden TV kipine geçer:
+
+| Tuş | Sayfada | İzlerken (tam ekran) |
+|---|---|---|
+| Yön tuşları | en yakın öğeye geç (mavi çerçeve); video kartı tek durak | sol/sağ 10 sn sar (basılı: 30 sn), yukarı süreyi göster, aşağı tam ekrandan çık |
+| Tamam | aç / tıkla; oynatıcı seçiliyse tam ekran | oynat / duraklat |
+| Geri | önceki sayfa | tam ekrandan çık |
+| Menü | uygulama menüsü (zamanlayıcı, Ara, Abonelikler, Geçmiş…) | — |
+
+- Sayfanın en üstünden yukarı basınca 🛡 rozeti seçilir; Tamam menüyü açar, aşağı sayfaya döner.
+- Shorts'ta yukarı/aşağı önceki/sonraki kısa video.
+- Kutunun saati yanlışsa (ör. 2020) YouTube açılmaz: Ayarlar → Tarih ve saat → **Otomatik**.
+- Eski kutularda en büyük hız farkını **Android System WebView** güncellemesi yapar (Play Store). Bazı ucuz kutularda WebView üreticinin anahtarıyla imzalı olduğu için Play güncelleyemez ("Can't install"); X96Q böyle.
 
 Öneriler:
 - İlk açılışta YouTube'da **hesabına giriş yap** — oturum kalıcıdır, "bot musun?" duvarına takılmazsın.

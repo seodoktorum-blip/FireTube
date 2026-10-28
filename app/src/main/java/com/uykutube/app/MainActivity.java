@@ -14,6 +14,7 @@ import android.os.PowerManager;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -78,6 +79,9 @@ public class MainActivity extends Activity {
     private long lastTouchAt = System.currentTimeMillis();
     volatile boolean videoPlaying = false;
     private boolean screenReleased = false;
+    // Android TV kutusu: kumanda gezinmesi; sayfa CSS tam ekranını bildirir
+    private boolean isTv = false;
+    private boolean tvFullscreen = false;
 
     // internet kesintisi: ana sayfa yüklenemezse geri çekilmeli yeniden deneme
     private static final int[] NET_RETRY_S = {30, 60, 120, 300};
@@ -109,6 +113,8 @@ public class MainActivity extends Activity {
         prefSponsor = prefs.getBoolean("sponsorBlock", true);
         injectSrc = readAsset("inject.js");
         preinjectSrc = readAsset("preinject.js");
+        isTv = ((android.app.UiModeManager) getSystemService(UI_MODE_SERVICE)).getCurrentModeType()
+                == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION;
 
         root = new FrameLayout(this);
         root.setBackgroundColor(Color.parseColor("#0F0F0F"));
@@ -137,6 +143,7 @@ public class MainActivity extends Activity {
         chip.setPadding((int) (10 * d), (int) (5 * d), (int) (10 * d), (int) (5 * d));
         chip.setTextSize(13);
         chip.setOnClickListener(v -> showMenu());
+        if (isTv) setupTvChip();
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP | Gravity.END);
@@ -180,7 +187,84 @@ public class MainActivity extends Activity {
         } else if (lastUrl == null) {
             lastUrl = START_URL;
         }
+        ensureDarkTheme();
         web.loadUrl(lastUrl);
+    }
+
+    /* YouTube koyu teması: PREF çerezinin f6 alanına 0x400 eklenir. Eski
+       WebView'ler (TV kutusu: 80) sistemin koyu tercihini sayfaya iletmiyor,
+       tema açık kalıyordu. YouTube'da açık tema açıkça seçildiyse dokunulmaz. */
+    private void ensureDarkTheme() {
+        try {
+            CookieManager cm = CookieManager.getInstance();
+            String pref = YtPref.withDarkTheme(YtPref.prefValue(cm.getCookie(START_URL)));
+            if (pref == null) return;
+            cm.setCookie(START_URL, "PREF=" + pref + "; Domain=.youtube.com; Path=/; Max-Age=63072000; Secure");
+            cm.flush();
+        } catch (Exception e) {
+            Log.w(TAG, "koyu tema çerezi yazılamadı: " + e.getMessage());
+        }
+    }
+
+    /* TV: 🛡 rozeti kumandayla seçilebilir (sayfanın en üstünden yukarı);
+       seçiliyken belirgin, aşağı/sola basınca odak sayfaya döner. */
+    private void setupTvChip() {
+        chip.setFocusable(true);
+        chip.setOnFocusChangeListener((v, has) ->
+                chip.setBackgroundColor(has ? 0xFF3EA6FF : 0xCC1A2B1A));
+        chip.setOnKeyListener((v, keyCode, event) -> {
+            if (keyCode != KeyEvent.KEYCODE_DPAD_DOWN && keyCode != KeyEvent.KEYCODE_DPAD_LEFT) return false;
+            if (event.getAction() == KeyEvent.ACTION_UP) tvFocusWeb();
+            return true;
+        });
+    }
+
+    private void tvFocusWeb() {
+        if (!isTv || web == null || customView != null) return;
+        web.requestFocus();
+        web.evaluateJavascript("window.__uykuTvKey && window.__uykuTvKey('focus')", null);
+    }
+
+    /* TV kumandası: MENÜ tuşu uygulama menüsünü açar; medya tuşları (bildirim
+       oturumu yokken etkinliğe gelir) ve tam ekran videodaki yön tuşları
+       sayfadaki oynatıcıya iletilir. */
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (!isTv || web == null) return super.dispatchKeyEvent(event);
+        int code = event.getKeyCode();
+        String key = null;
+        switch (code) {
+            case KeyEvent.KEYCODE_MENU:
+                if (event.getAction() == KeyEvent.ACTION_UP) showMenu();
+                return true;
+            case KeyEvent.KEYCODE_SEARCH:
+                key = "search";
+                break;
+            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+            case KeyEvent.KEYCODE_MEDIA_PLAY:
+            case KeyEvent.KEYCODE_MEDIA_PAUSE:
+                key = "toggle";
+                break;
+            case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:
+                key = "right";
+                break;
+            case KeyEvent.KEYCODE_MEDIA_REWIND:
+                key = "left";
+                break;
+            default:
+                // Chromium'un tam ekran görünümü (customView) tuşları sayfaya iletmez
+                if (customView != null) {
+                    if (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER) key = "toggle";
+                    else if (code == KeyEvent.KEYCODE_DPAD_LEFT) key = "left";
+                    else if (code == KeyEvent.KEYCODE_DPAD_RIGHT) key = "right";
+                    else if (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN) key = "up";
+                }
+        }
+        if (key == null) return super.dispatchKeyEvent(event);
+        if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+            web.evaluateJavascript("window.__uykuTvKey && window.__uykuTvKey('" + key + "')", null);
+        }
+        return true;
     }
 
     /* Kurallar/uBO anahtarlari sonradan gelince acik sayfadaki on script'e
@@ -222,8 +306,11 @@ public class MainActivity extends Activity {
     }
 
     private static WebResourceResponse htmlResponse(String html) {
-        WebResourceResponse res = new WebResourceResponse("text/html", "utf-8",
-                new ByteArrayInputStream(html.getBytes(StandardCharsets.UTF_8)));
+        return htmlResponse(new ByteArrayInputStream(html.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private static WebResourceResponse htmlResponse(InputStream body) {
+        WebResourceResponse res = new WebResourceResponse("text/html", "utf-8", body);
         java.util.Map<String, String> headers = new java.util.HashMap<>();
         headers.put("Content-Type", "text/html; charset=utf-8");
         // CSP başlıklarını bilerek iletmiyoruz: kendi enjekte ettiğimiz
@@ -278,8 +365,8 @@ public class MainActivity extends Activity {
             c.setInstanceFollowRedirects(false);
             c.setRequestProperty("User-Agent", uaString != null ? uaString : "");
             c.setRequestProperty("Accept-Language", "tr,en;q=0.9");
-            // açılışı basit tut: sıkıştırma isteme
-            c.setRequestProperty("Accept-Encoding", "identity");
+            // Accept-Encoding bilerek verilmez: HttpURLConnection gzip ister ve kendisi
+            // açar (HTML 350 KB → 114 KB; "identity" ile TV kutusunda 4,3 sn sürüyordu)
             String cookies = CookieManager.getInstance().getCookie(urlStr);
             if (cookies != null) c.setRequestProperty("Cookie", cookies);
 
@@ -298,19 +385,44 @@ public class MainActivity extends Activity {
             }
             if (code != 200) return null;
 
-            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
-            try (java.io.InputStream in = c.getInputStream()) {
-                byte[] buf = new byte[16384];
-                int n;
-                while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+            // Yalnız <head> etiketine kadar okunur (genelde ilk parça); ön script
+            // araya eklenir, gerisi ağdan AKARAK verilir: WebView belgenin tamamını
+            // beklemeden işlemeye başlar (zayıf TV kutusunda ilk görüntü erken gelir).
+            java.io.InputStream in = c.getInputStream();
+            byte[] data = new byte[16384];
+            int len = 0, gt = -1, n;
+            while (gt < 0 && len < 512 * 1024) {
+                if (len == data.length) data = java.util.Arrays.copyOf(data, data.length * 2);
+                n = in.read(data, len, data.length - len);
+                if (n <= 0) break;
+                len += n;
+                gt = HtmlHead.end(data, len);
             }
-            String html = new String(bos.toByteArray(), StandardCharsets.UTF_8);
-            int head = html.indexOf("<head");
-            int gt = head >= 0 ? html.indexOf('>', head) : -1;
-            if (gt < 0) return null;
-            html = html.substring(0, gt + 1) + "<script>" + filter.bootScript() + holdBootScript()
-                    + preinjectSrc + "</script>" + html.substring(gt + 1);
-            return htmlResponse(html);
+            if (gt < 0) {
+                in.close();
+                return null;
+            }
+            byte[] script = ("<script>" + filter.bootScript() + holdBootScript() + preinjectSrc + "</script>")
+                    .getBytes(StandardCharsets.UTF_8);
+            java.io.InputStream body = new java.io.SequenceInputStream(java.util.Collections.enumeration(
+                    java.util.Arrays.asList(
+                            new ByteArrayInputStream(data, 0, gt + 1),
+                            new ByteArrayInputStream(script),
+                            new ByteArrayInputStream(data, gt + 1, len - gt - 1),
+                            in)));
+            // bağlantı, WebView akışı okuyup kapatınca kapanır
+            final java.net.HttpURLConnection conn = c;
+            c = null;
+            return htmlResponse(new java.io.FilterInputStream(body) {
+                @Override
+                public void close() throws java.io.IOException {
+                    try {
+                        super.close();
+                    } finally {
+                        conn.disconnect();
+                    }
+                }
+            });
         } finally {
             if (c != null) c.disconnect();
         }
@@ -333,6 +445,12 @@ public class MainActivity extends Activity {
         // UA'dan WebView ("wv") ibaresini kaldır; Google girişi webview'e takılmasın
         s.setUserAgentString(s.getUserAgentString().replace("; wv", ""));
         uaString = s.getUserAgentString(); // arka plan iş parçacığından kullanılacak
+        if (isTv) {
+            // kumanda tuşları sayfaya gitsin (yoksa odak 🛡 rozetinde kalıyordu)
+            web.setFocusable(true);
+            web.setFocusableInTouchMode(true);
+            web.post(web::requestFocus);
+        }
 
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
@@ -372,14 +490,7 @@ public class MainActivity extends Activity {
                 if (scheme == null || !(scheme.equals("http") || scheme.equals("https"))) {
                     return true;
                 }
-                String host = u.getHost() == null ? "" : u.getHost().toLowerCase(Locale.ROOT);
-                if (host.endsWith("youtube.com") || host.endsWith("youtube-nocookie.com")
-                        || host.endsWith("googlevideo.com") || host.endsWith("google.com")
-                        || host.endsWith("googleusercontent.com") || host.endsWith("ytimg.com")
-                        || host.endsWith("gstatic.com") || host.endsWith("googleapis.com")
-                        || host.endsWith("gvt1.com") || host.endsWith("youtubeeducation.com")) {
-                    return false;
-                }
+                if (Hosts.stayInApp(u.getHost())) return false;
                 try {
                     startActivity(new Intent(Intent.ACTION_VIEW, u));
                 } catch (Exception ignored) {
@@ -391,6 +502,11 @@ public class MainActivity extends Activity {
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 super.onPageStarted(view, url, favicon);
                 mainFrameError = false;
+                // yeni belge tam ekranda başlamaz (sayfa gerekirse yeniden bildirir)
+                if (tvFullscreen) {
+                    tvFullscreen = false;
+                    if (chip != null) chip.setVisibility(View.VISIBLE);
+                }
             }
 
             /* Ana sayfa yüklenemezse (gece modem yeniden başladı vb.) WebView hata
@@ -416,7 +532,8 @@ public class MainActivity extends Activity {
                 if (netRetries > 0) appLog("AG: sayfa yeniden yüklendi");
                 netRetries = 0;
                 bridgeHandler.removeCallbacks(netRetry);
-                if (injectSrc != null) view.evaluateJavascript(injectSrc, null);
+                if (injectSrc != null) view.evaluateJavascript((isTv ? "window.__uykuTv=1;" : "") + injectSrc, null);
+                ensureDarkTheme(); // sonraki yüklemeler için (çıkış/girişte çerez yenilenebilir)
                 // yeni sayfa kalite kipini bilmez: her yüklemede bildirilir
                 if (qualityLow == null) updateQualityMode();
                 else pushQualityMode();
@@ -671,6 +788,24 @@ public class MainActivity extends Activity {
             });
         }
 
+        /* TV: sayfanın "tam ekran" kipi (CSS ile). Geri tuşu önce bundan çıkar;
+           🛡 rozeti videonun üstünde durmasın. */
+        @JavascriptInterface
+        public void onTvFull(boolean on) {
+            runOnUiThread(() -> {
+                tvFullscreen = on;
+                if (chip != null) chip.setVisibility(on ? View.GONE : View.VISIBLE);
+            });
+        }
+
+        // TV: sayfanın en üstünden yukarı basılınca odak uygulama menüsünün rozetine
+        @JavascriptInterface
+        public void focusChip() {
+            runOnUiThread(() -> {
+                if (chip != null && chip.getVisibility() == View.VISIBLE) chip.requestFocus();
+            });
+        }
+
         /* Köprü sayfadaki tüm frame'lere açık (iframe'ler de çağırabilir):
            günlüğe yazılan mesaj uzunluğu sınırlanır. */
         @JavascriptInterface
@@ -693,7 +828,9 @@ public class MainActivity extends Activity {
     /* MIUI/Android pil kısıtlaması gece ağ'ı kısıtlayıp sesin gitmesine yol
      * açabilir; ilk oynatışta sistemden muafiyet onayı istenir. */
     private void askBatteryOnce() {
-        if (askedBattery) return;
+        // TV'de bu ekran boş bir taslak: açılıp kapanıyor ve her açılışta video
+        // başlarken uygulamayı duraklatıp sürdürüyordu (yüzey yenilemesi dahil)
+        if (askedBattery || isTv) return;
         askedBattery = true;
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
         if (pm.isIgnoringBatteryOptimizations(getPackageName())) return;
@@ -716,10 +853,13 @@ public class MainActivity extends Activity {
         if (chip == null) return;
         boolean watch = url != null && url.contains("/watch");
         float d = getResources().getDisplayMetrics().density;
-        int m = (int) (d * (watch ? 4 : 72));
+        // TV (yatay, geniş): üst çubukta arama simgesinin solunda; çip şeridine binmesin
+        int m = (int) (d * (isTv ? 8 : watch ? 4 : 72));
+        int right = (int) (d * (isTv ? 56 : 10));
         FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) chip.getLayoutParams();
-        if (lp.topMargin != m) {
+        if (lp.topMargin != m || lp.rightMargin != right) {
             lp.topMargin = m;
+            lp.rightMargin = right;
             chip.requestLayout();
         }
     }
@@ -762,10 +902,21 @@ public class MainActivity extends Activity {
         });
         items.add("🏠 Ana sayfa");
         acts.add(() -> web.loadUrl(START_URL));
+        if (isTv) {
+            // kumandayla alt çubuğa (Abonelikler/Siz) inmek zahmetli: menüden de gidilir
+            items.add("🔍 Ara");
+            acts.add(() -> web.evaluateJavascript("window.__uykuTvKey && window.__uykuTvKey('search')", null));
+            items.add("📺 Abonelikler");
+            acts.add(() -> web.loadUrl("https://m.youtube.com/feed/subscriptions"));
+            items.add("🕘 Geçmiş");
+            acts.add(() -> web.loadUrl("https://m.youtube.com/feed/history"));
+        }
         items.add("⟳ Yenile");
         acts.add(() -> web.reload());
-        items.add("🔋 Arka plan çalma izni (pil)");
-        acts.add(this::requestBatteryException);
+        if (!isTv) {
+            items.add("🔋 Arka plan çalma izni (pil)");
+            acts.add(this::requestBatteryException);
+        }
 
         String versionName = "?";
         try {
@@ -839,6 +990,15 @@ public class MainActivity extends Activity {
     public void onBackPressed() {
         if (customView != null) {
             chromeClient.onHideCustomView();
+        } else if (isTv && tvFullscreen) {
+            // TV: Geri önce sayfanın tam ekranından çıkar (izleme sayfasında kalınır);
+            // sayfa tam ekranda değilse (durum eskimiş) normal geri
+            web.evaluateJavascript("window.__uykuTvKey ? window.__uykuTvKey('back') : false", v -> {
+                if ("true".equals(v)) return;
+                tvFullscreen = false;
+                chip.setVisibility(View.VISIBLE);
+                onBackPressed();
+            });
         } else if (web.canGoBack()) {
             // geri tuşu sayfaya dokunuş olarak ulaşmaz: kullanıcı uyanık, kilit kalksın
             web.evaluateJavascript("window.__uykuWake && window.__uykuWake()", null);
@@ -871,6 +1031,8 @@ public class MainActivity extends Activity {
             // Tam ekranda video customView'da çizilir; WebView'i söküp görünür
             // yapmak tam ekrandan çıkarabilir/üstüne binebilir — dokunma.
             if (customView != null) return;
+            // TV: söküp takarken odak rozete kayar; rozet seçili değilse sayfaya geri verilir
+            final boolean chipFocused = chip != null && chip.isFocused();
             // 1) AwContents'i duraklat/destekle: compositor yüzeyini bırakır/yeniden ister
             try { web.onPause(); } catch (Exception ignored) {}
             try { web.onResume(); } catch (Exception ignored) {}
@@ -893,6 +1055,7 @@ public class MainActivity extends Activity {
             } catch (Exception ignored) {}
             Log.d(TAG, "agir yuzey tekrmesi yapildi");
             appLog("YUZEY: agir tekrme");
+            if (isTv && !chipFocused) web.post(web::requestFocus);
         });
     }
 
@@ -1207,6 +1370,9 @@ public class MainActivity extends Activity {
             return;
         }
         if (!videoPlaying || customView != null) return;
+        // TV'de film izlerken 25 dk'da ekran koruyucu gelmesin: TV'yi uyku
+        // zamanlayıcısı kapatır (telefondaki "uyuyakaldı" senaryosu yok)
+        if (isTv) return;
         // Ekran zaten kapalıysa bırakmanın faydası yok (kilit açılınca geri
         // gelmesi de gerekmesin): yalnız ekran açıkken karar verilir
         if (!((PowerManager) getSystemService(POWER_SERVICE)).isInteractive()) return;

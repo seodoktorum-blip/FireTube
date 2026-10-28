@@ -5,7 +5,8 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 
-const src = fs.readFileSync(path.join(__dirname, '../../main/assets/inject.js'), 'utf8');
+// git autocrlf ile çalışma kopyası CRLF olabilir
+const src = fs.readFileSync(path.join(__dirname, '../../main/assets/inject.js'), 'utf8').replace(/\r\n/g, '\n');
 const start = src.indexOf('var lastPos = -1, lastAdvanceAt');
 const fnStart = src.indexOf('function handleBufferStall()', start);
 const end = src.indexOf('\n  }\n', fnStart) + 4;
