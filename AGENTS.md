@@ -1,4 +1,4 @@
-Şu an: v1.19, adım 5 | Son yapılan: TV'de WebView güncellemesi denendi — imza uyuşmazlığı, mümkün değil | Sıradaki: telefonda doğrulama (adb açılınca), commit (kullanıcı isterse)
+Şu an: v1.19, adım 5 | Son yapılan: v1.18.1 + v1.19 commit + push (b77d1a1) | Sıradaki: telefonda doğrulama (kablosuz adb açılınca)
 
 # FireTube — plan
 
@@ -47,7 +47,7 @@ Kök neden 1: SwipeRefreshLayout eski WebView'i ölçüyordu (kurtarmada yeni We
 - [x] X96Q TV kutusu (192.168.8.7:5555, Android 10, armeabi-v7a, WebView 80) kuruldu. Kutu saati 2020'deydi → SSL hatası; kullanıcı otomatik saati açtı
 - [x] Giriş sonunda accounts.google.by Chrome'a gidiyor → YouTube TV açılıyordu. Hosts.stayInApp: Google ülke alan adları içeride; HostsTest (3). 1.18.1 (versionCode 20) kutuya kuruldu
 - [x] Kullanıcı kutuda girişi yaptı (SAPISID var); telefona 1.18.1 henüz kurulmadı
-- [ ] Commit + push (kullanıcı isterse) — v1.19 ile birlikte
+- [x] Commit + push — v1.19 ile birlikte (b77d1a1)
 
 # v1.19 — Android TV kutusu (28 Eki 2026; X96Q: 4 çekirdek 1,34 GHz, 2 GB, WebView 80, UI_MODE_TYPE_TELEVISION, touchscreen=true bildiriyor)
 Bulgular: kumanda tuşları sayfaya gitmiyor (Android odağı 🛡 rozetinde; WebView'in kendi uzamsal gezinmesi touchscreen=true yüzünden kapalı). Koyu tema: WebView 80 prefers-color-scheme vermiyor; PREF çerezine f6=400 eklenince mweb koyu (CDP ile doğrulandı). Yavaşlık: cihaz boşta, darboğaz WebView 80 + zayıf SoC.
@@ -58,7 +58,7 @@ Bulgular: kumanda tuşları sayfaya gitmiyor (Android odağı 🛡 rozetinde; We
 - [x] 4. Derleme + testler (JUnit 31, JS 2) + kutuda baştan sona deneme + CHANGELOG/README + sürüm 1.19 (versionCode 21)
 - [x] WebView güncellemesi denendi (kullanıcı Play'e giriş yaptı): kurulamıyor — kutudaki WebView 80 üretici anahtarıyla imzalı ("signatures do not match", Play hata 6000); sağlayıcı listesinde yalnız com.google.android.webview var (Beta/Dev yok). Root olmadan güncellenemez
 - [ ] 5. Telefonda doğrulama (gzip/akış, koyu tema tüm cihazlarda) — telefon kablosuz adb'ye kapalıydı
-- [ ] 6. Commit + push (kullanıcı isterse)
+- [x] 6. Commit + push: b77d1a1 (seodoktorum-blip hesabıyla)
 
 ## Açık işler
 - [ ] `./gradlew` ilk çalıştırmada Gradle 9.8.0 dağıtımını indirir (yerelde denenmedi)
