@@ -1,4 +1,4 @@
-Şu an: v1.19, adım 5 | Son yapılan: v1.18.1 + v1.19 commit + push (b77d1a1) | Sıradaki: telefonda doğrulama (kablosuz adb açılınca)
+Şu an: v1.19, izleme | Son yapılan: telefonda v1.19 doğrulandı | Sıradaki: yok (gece günlüğü izlensin; TV'de kullanıcı geri bildirimi)
 
 # FireTube — plan
 
@@ -57,7 +57,7 @@ Bulgular: kumanda tuşları sayfaya gitmiyor (Android odağı 🛡 rozetinde; We
 - [x] Shorts: ilk (bağlantıyla açılan) kısa video sessiz başlıyordu → checkAutoMuted Shorts'ta da
 - [x] 4. Derleme + testler (JUnit 31, JS 2) + kutuda baştan sona deneme + CHANGELOG/README + sürüm 1.19 (versionCode 21)
 - [x] WebView güncellemesi denendi (kullanıcı Play'e giriş yaptı): kurulamıyor — kutudaki WebView 80 üretici anahtarıyla imzalı ("signatures do not match", Play hata 6000); sağlayıcı listesinde yalnız com.google.android.webview var (Beta/Dev yok). Root olmadan güncellenemez
-- [ ] 5. Telefonda doğrulama (gzip/akış, koyu tema tüm cihazlarda) — telefon kablosuz adb'ye kapalıydı
+- [x] 5. Telefonda doğrulama (28 Eki): ön script aktif, oturum açık, TV kipi kapalı, koyu tema (f6=40000000 → 40000400, diğer bitler korundu), ana sayfa HTML 2,2 sn / ilk boyama 2,3 sn, izleme sayfası HTML 1,8 sn, video sesli oynadı
 - [x] 6. Commit + push: b77d1a1 (seodoktorum-blip hesabıyla)
 
 ## Açık işler
