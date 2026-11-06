@@ -41,7 +41,7 @@ TV'de kumandayla kullanırken çıkan sorunlar (kutu TV'ye bağlanınca):
 - **TV'de izleme:** video tam ekran açılır. Tamam oynat/duraklat, sol/sağ
   10 sn (basılı tutunca 30 sn) sarar, yukarı süreyi gösterir, aşağı ya da Geri
   tam ekrandan çıkar. Shorts'ta yukarı/aşağı önceki/sonraki kısa video.
-  Kumandanın medya tuşları da çalışır. Menüye Ara, Abonelikler, Geçmiş eklendi.
+  Kumandanın medya tuşları da oynatıcıya iletilir (kutuda denenmedi). Menüye Ara, Abonelikler, Geçmiş eklendi.
 - **TV'de hız:** sayfadaki sürekli animasyonlar zayıf kutuda boşta bile
   işlemciyi %29 meşgul ediyordu; TV'de animasyonlar anlık yapılıyor (%9).
   Denetim döngüsü TV'de saniyede bir; akıştaki sessiz önizlemeler oynatılmıyor.

@@ -1,4 +1,4 @@
-Şu an: v1.19.2, kullanıcı denemesi | Son yapılan: v1.19.1 + v1.19.2 commit + push (caf48e9) | Sıradaki: kullanıcı TV'de denesin; telefona 1.19.2 kurulmadı
+Şu an: v1.19.2, kullanıcı denemesi | Son yapılan: GitHub açıklamaları (README, depo tanımı) güncellendi | Sıradaki: kullanıcı TV'de denesin; telefona 1.19.2 kurulmadı; Releases hâlâ v1.12
 
 # FireTube — plan
 
@@ -77,6 +77,12 @@ Bulgular (kutu yeniden başlamış, logcat yok; uyku.log): her kapanış ACILIS 
 - [x] 1.19.2 (versionCode 23) kutuya kuruldu; testler geçti
 - [ ] Kullanıcı TV'de denesin (1.19.1 + 1.19.2); günlükte GERI / KUMANDA / "çizilmedi" satırları izlensin
 - [x] Commit + push — 1.19.1 + 1.19.2 birlikte (caf48e9, seodoktorum-blip hesabıyla)
+
+# GitHub açıklamaları (6 Kas 2026)
+- [x] README baştan düzenlendi: yeni özellikler (v1.14–v1.19.2), TV bölümü, üç katmanlı reklam anlatımı, mimari tablosu (Hosts, HtmlHead, YtPref, SponsorBlock), İngilizce bölüm eşitlendi. Depo tanımı TV'yi de içeriyor
+- [x] Düzeltilen iddialar: WebView güncellemesinin hız etkisi ölçülmedi (kesin ifade kaldırıldı); medya tuşları kutuda denenmedi (README + CHANGELOG'da yazıyor)
+- [ ] TV'de medya tuşları denensin (MediaSession yalnız oynat/duraklat karşılıyor; ileri/geri etkinliğe önce gelirse çalışır)
+- [ ] GitHub Releases: son sürüm hâlâ v1.12 (APK ekli); v1.13 sonrası etiket yok. Kullanıcı isterse v1.19.2 yayınlanır
 
 ## Açık işler
 - [ ] `./gradlew` ilk çalıştırmada Gradle 9.8.0 dağıtımını indirir (yerelde denenmedi)
