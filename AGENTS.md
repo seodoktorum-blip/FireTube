@@ -1,4 +1,4 @@
-Şu an: v1.19.2, kullanıcı denemesi | Son yapılan: akışta gönderi/anket gizleme + boş sayfa bekçisi; kutuya kuruldu | Sıradaki: kullanıcı TV'de denesin; commit (isterse)
+Şu an: v1.19.2, kullanıcı denemesi | Son yapılan: v1.19.1 + v1.19.2 commit + push (caf48e9) | Sıradaki: kullanıcı TV'de denesin; telefona 1.19.2 kurulmadı
 
 # FireTube — plan
 
@@ -68,7 +68,7 @@ Bulgular (kutu yeniden başlamış, logcat yok; uyku.log): her kapanış ACILIS 
 - [x] Fare kipi: SOURCE_MOUSE olayında uyarı (dakikada bir) + günlük; alışılmadık tuşlar günlüğe (KUMANDA)
 - [x] 1.19.1 (versionCode 22) kutuya kuruldu; telefon etkilenmez (hepsi TV'ye bağlı)
 - [ ] Kullanıcı TV'de denesin → v1.19.2'de izleniyor
-- [ ] Commit + push → v1.19.2 ile birlikte
+- [x] Commit + push → v1.19.2 ile birlikte (caf48e9)
 
 # v1.19.2 — akışta yalnız videolar + boş sayfa bekçisi (30 Eki 2026)
 - [x] hideNonVideo (inject, tüm cihazlar, ön plan döngüsü): gönderi/anket/anket kutusu/oyun/tanıtım bileşenleri üst düzey akış öğesiyle gizlenir; /posts, /community hariç. Kutuda yapay gönderi+anket gizlendi, 4 gerçek öğe kaldı
@@ -76,7 +76,7 @@ Bulgular (kutu yeniden başlamış, logcat yok; uyku.log): her kapanış ACILIS 
 - [x] Açılış bekçisi: 30 sn'de ytm-app metni yoksa son ytcsi adımıyla UYARI + uykuReload. Normal sayfada sessiz
 - [x] 1.19.2 (versionCode 23) kutuya kuruldu; testler geçti
 - [ ] Kullanıcı TV'de denesin (1.19.1 + 1.19.2); günlükte GERI / KUMANDA / "çizilmedi" satırları izlensin
-- [ ] Commit + push (kullanıcı isterse) — 1.19.1 + 1.19.2 birlikte
+- [x] Commit + push — 1.19.1 + 1.19.2 birlikte (caf48e9, seodoktorum-blip hesabıyla)
 
 ## Açık işler
 - [ ] `./gradlew` ilk çalıştırmada Gradle 9.8.0 dağıtımını indirir (yerelde denenmedi)
