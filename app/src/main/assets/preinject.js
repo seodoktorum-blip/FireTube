@@ -48,6 +48,26 @@
     say('önceki duraklatma: sayfa duraklatılmış açılıyor');
   }
 
+  /* TV kumandası (Android __uykuTv gömer): YouTube'un klavye kısayolları (c alt
+     yazı, rakamlar videonun %0-90'ına atlar, k/j/l/m/f...) kumandanın harf,
+     rakam ve SUBTITLE tuşlarıyla tetiklenip alt yazıyı açıyor, videoyu
+     atlatıyordu. Bu dinleyici YouTube'dan ÖNCE kaydolur: yazı alanı dışında
+     tek karakterli ve Home/End gibi tuşlar sayfaya ulaşmaz; yön/Tamam
+     inject.js'teki TV gezinmesine (__uykuTvKeydown) gider. */
+  if (window.__uykuTv) {
+    window.__uykuTvBlockKey = function (e) {
+      var t = e.target, tag = t && t.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (t && t.isContentEditable)) return false;
+      var k = e.key || '';
+      return k.length === 1 || /^(Home|End|PageUp|PageDown|F\d+|Subtitle|ClosedCaptionToggle)$/.test(k);
+    };
+    window.addEventListener('keydown', function (e) {
+      if (typeof window.__uykuTvKeydown === 'function') { window.__uykuTvKeydown(e); return; }
+      if (window.__uykuTvBlockKey(e)) { e.preventDefault(); e.stopImmediatePropagation(); }
+    }, true);
+    window.__firePreTv = true;
+  }
+
   /* Orijinal JSON.parse: hem sarmalayıcı hem yama aynı temele bassın */
   var origJSONParse = JSON.parse;
 

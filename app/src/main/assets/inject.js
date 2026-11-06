@@ -570,6 +570,33 @@
   }
 
   // "Uygulamada aç" tarzı bantları gizle
+  /* Akışta yalnız videolar: topluluk gönderileri, anketler, anket/geri bildirim
+     kutuları, oyunlar (Playables) ve tanıtım bantları, içindeki üst düzey akış
+     öğesiyle birlikte gizlenir (boşluk kalmasın). Shorts ve video rafları kalır;
+     bir kanalın kendi Gönderiler sekmesine dokunulmaz. */
+  var NON_VIDEO = 'ytm-backstage-post-thread-renderer,ytm-backstage-post-renderer,ytm-post-renderer,' +
+      'yt-post-header,ytm-backstage-poll-renderer,ytm-poll-renderer,yt-poll-view-model,' +
+      'ytm-inline-survey-renderer,ytm-survey-renderer,ytm-feed-nudge-renderer,' +
+      'ytm-statement-banner-renderer,ytm-brand-video-singleton-renderer,ytm-mini-game-card-view-model,' +
+      'ytm-playables-shelf-renderer,ytm-banner-promo-renderer,ytm-mealbar-promo-renderer,' +
+      'ytm-merch-shelf-renderer,ytm-ticket-shelf-renderer';
+  var nonVideoSaid = false;
+  function hideNonVideo() {
+    if (/\/(posts|community)(\/|$)/.test(location.pathname)) return;
+    var found = document.querySelectorAll(NON_VIDEO);
+    var n = 0;
+    for (var i = 0; i < found.length; i++) {
+      var box = found[i].closest('ytm-rich-section-renderer,ytm-rich-item-renderer,ytm-item-section-renderer') || found[i];
+      if (box.style.display === 'none') continue;
+      box.style.display = 'none';
+      n++;
+    }
+    if (n && !nonVideoSaid) {
+      nonVideoSaid = true;
+      say('akıştan video dışı öğe gizlendi (gönderi/anket vb.)');
+    }
+  }
+
   function hideClutter() {
     if (document.getElementById('uyku-style')) return;
     var st = document.createElement('style');
@@ -808,7 +835,10 @@
       'background:rgba(0,0,0,.75);color:#fff;font:500 22px Roboto,Arial,sans-serif;padding:10px 22px;' +
       'border-radius:24px;pointer-events:none;display:none;white-space:nowrap}';
     (document.head || document.documentElement).appendChild(st);
-    window.addEventListener('keydown', tvKey, true);
+    // ön script'in kapısı YouTube'dan önce kayıtlı: tuşlar oradan gelir; yoksa
+    // (ön script eklenemedi) kendi dinleyicimiz
+    window.__uykuTvKeydown = tvKey;
+    if (!window.__firePreTv) window.addEventListener('keydown', tvKey, true);
     // seçim çerçevesi kaydırmada öğeyle birlikte gitsin (iç kaydırma alanları dahil)
     window.addEventListener('scroll', tvPlace, { capture: true, passive: true });
     window.addEventListener('resize', tvPlace);
@@ -1040,15 +1070,28 @@
     tvOsd((d > 0 ? '» ' : '« ') + tvTime(v, t));
   }
 
+  // YouTube kısayolları (c alt yazı, rakamlar %0-90 atlama, k/j/l/m/f...) TV'de kapalı:
+  // kumandanın harf/rakam/SUBTITLE tuşları alt yazıyı açıyor, videoyu atlatıyordu
+  function tvBlockKey(e) {
+    if (window.__uykuTvBlockKey) return window.__uykuTvBlockKey(e);
+    var t = e.target, tag = t && t.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || (t && t.isContentEditable)) return false;
+    var k = e.key || '';
+    return k.length === 1 || /^(Home|End|PageUp|PageDown|F\d+|Subtitle|ClosedCaptionToggle)$/.test(k);
+  }
+
   function tvKey(e) {
     var dir = TV_DIRS[e.key] || TV_CODES[e.keyCode];
     var enter = e.key === 'Enter' || e.keyCode === 13;
-    if (!dir && !enter) return;
+    if (!dir && !enter) {
+      if (tvBlockKey(e)) { e.preventDefault(); e.stopImmediatePropagation(); }
+      return;
+    }
     var ae = document.activeElement;
     var typing = ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable);
     if (typing && (enter || dir === 'left' || dir === 'right')) return; // yazı alanında yerel davranış
     e.preventDefault();
-    e.stopPropagation();
+    e.stopImmediatePropagation(); // YouTube'un kendi tuş işleyicileri de görmesin
     if (tvFull) { tvPlayerKey(enter ? 'enter' : dir, e.repeat); return; }
     // Shorts: yukarı/aşağı önceki/sonraki kısa video, Tamam oynat/duraklat
     if (/^\/shorts\//.test(location.pathname)) {
@@ -1079,10 +1122,16 @@
     lastUser = Date.now();
     holdPause = false;
     if (k === 'back') {
-      if (!tvFull) return false;
-      tvFullscreen(false);
-      return true;
+      if (tvFull) { tvFullscreen(false); return true; }
+      // açık menü/alt sayfa: önce o kapanır (Geri uygulamadan çıkarmasın)
+      var sc = tvScope();
+      if (sc !== document) {
+        var close = sc.querySelector('[aria-label*="kapat" i],[aria-label*="close" i]');
+        if (close) { close.click(); return true; }
+      }
+      return false;
     }
+    if (k === 'captions') { tvCaptionsOn = !tvCaptionsOn; tvApplyCaptions(true); return true; }
     if (k === 'focus') {
       tvAway = false;
       tvPlace();
@@ -1099,9 +1148,40 @@
     return true;
   };
 
+  /* Alt yazı: YouTube alt yazı bir kez açılınca (ör. kumandanın bir tuşu
+     "c" kısayolunu tetikleyince) bunu hatırlayıp sonraki bütün videolarda
+     açıyordu. TV'de her videoda uygulamanın ayarına çekilir (varsayılan
+     kapalı); menüden ya da kumandanın SUBTITLE tuşuyla değişir. */
+  var tvCaptionsOn = !!window.__uykuTvCaptions, tvCapLogAt = 0, tvCapVid = null, tvCapTries = 0;
+  function tvApplyCaptions(announce) {
+    var p = player();
+    if (!p || !p.isSubtitlesOn || !p.toggleSubtitles || !tvOnWatch()) {
+      if (announce) tvOsd('Alt yazı: ' + (tvCaptionsOn ? 'açık' : 'kapalı'));
+      return;
+    }
+    var on = false;
+    try { on = !!p.isSubtitlesOn(); } catch (e) {}
+    var vid = currentVid();
+    if (vid !== tvCapVid || announce) { tvCapVid = vid; tvCapTries = 0; }
+    // alt yazısı olmayan videoda her saniye yeniden denenmesin: video başına 3 deneme
+    if (on !== tvCaptionsOn && tvCapTries < 3) {
+      tvCapTries++;
+      try { p.toggleSubtitles(); } catch (e) {}
+      if (!announce && Date.now() - tvCapLogAt > 60000) {
+        tvCapLogAt = Date.now();
+        say('alt yazı ' + (tvCaptionsOn ? 'açıldı' : 'kapatıldı') + ' (TV ayarı)');
+      }
+    }
+    if (announce) {
+      tvOsd('Alt yazı: ' + (tvCaptionsOn ? 'açık' : 'kapalı'));
+      try { if (window.FireTube && window.FireTube.onTvCaptions) window.FireTube.onTvCaptions(tvCaptionsOn); } catch (e) {}
+    }
+  }
+
   // Sayfa değişimi: izleme sayfasına her yeni videoda tam ekran; başka sayfada çık
   function tvCheck() {
     if (!TV) return;
+    run('altyazi', function () { tvApplyCaptions(false); });
     if (location.pathname !== tvPath) {
       tvPath = location.pathname;
       if (tvCur) tvCur.classList.remove('uyku-odak');
@@ -1151,6 +1231,7 @@
     lastFgRun = now;
     runChecks();
     run('clutter', hideClutter);
+    run('videodisi', hideNonVideo);
     run('openapp', hideOpenApp);
   }
 
@@ -1170,6 +1251,22 @@
   };
 
   setInterval(tickChecks, 300);
+
+  /* Bekçi: YouTube'un 29 Eki sürümüyle sayfa bazen bot denetimi (PoToken) adımında
+     takılıp hiç çizilmedi (TV kutusunda boş ekran, yenilemeler de boş). 30 sn içinde
+     içerik çizilmezse son açılış adımı günlüğe yazılır ve sayfa yenilenir
+     (uykuReload sınırı: 10 dk'da 3). */
+  if (/(^|\.)youtube\.com$/.test(location.hostname)) {
+    setTimeout(function () {
+      run('acilisbekcisi', function () {
+        var app = q('ytm-app');
+        if (!app || (app.innerText || '').trim().length > 20) return;
+        var g = window.ytcsi && ytcsi.gt && ytcsi.gt();
+        var ticks = g && g.tick ? Object.keys(g.tick) : [];
+        uykuReload('UYARI: YouTube sayfası 30 sn içinde çizilmedi (son adım: ' + (ticks[ticks.length - 1] || '?') + ')');
+      });
+    }, 30000);
+  }
   run('gozlemci', observePlayer);
 
   say('hazır');

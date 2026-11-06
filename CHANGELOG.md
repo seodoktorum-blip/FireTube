@@ -1,5 +1,34 @@
 # Sürüm Geçmişi
 
+## v1.19.2 — 30 Ekim 2026
+- **Akışta yalnız videolar:** ana sayfa ve diğer akışlardaki topluluk
+  gönderileri, anketler, anket/geri bildirim kutuları, oyunlar (Playables) ve
+  tanıtım bantları gizlenir; videolar ve Shorts kalır. Bir kanalın kendi
+  Gönderiler sekmesine dokunulmaz.
+- **Boş sayfa bekçisi:** YouTube'un 29 Ekim sürümüyle TV kutusunda sayfa bir
+  süre bot denetimi (PoToken) adımında takılıp hiç çizilmedi (boş ekran).
+  Sayfa 30 sn içinde çizilmezse son açılış adımı günlüğe yazılır ve sayfa
+  yenilenir (10 dakikada en çok 3 kez).
+
+## v1.19.1 — 30 Ekim 2026
+TV'de kumandayla kullanırken çıkan sorunlar (kutu TV'ye bağlanınca):
+- **Uygulamadan istemeden çıkma:** ana sayfada (ya da geçmişi olmayan bir
+  sayfada) Geri'ye basınca uygulama kapanıyordu; kumandada bir fazla basmak
+  çok kolay. Artık Geri sırasıyla tam ekranı / açık YouTube menüsünü kapatır,
+  önceki sayfaya, sonra ana sayfaya döner; uygulamadan yalnız ana sayfada
+  iki kez art arda basınca çıkılır ("Çıkmak için Geri'ye tekrar bas").
+- **Kendiliğinden açılan alt yazı:** YouTube'un klavye kısayolları (C alt yazı,
+  rakamlar videoyu %0-90'a atlatır, K/J/L/M/F...) kumandanın harf, rakam ve
+  SUBTITLE tuşlarıyla tetikleniyordu; YouTube alt yazı bir kez açılınca bunu
+  hatırlayıp her videoda açıyordu. TV'de bu kısayollar kapalı; alt yazı
+  uygulamanın ayarına göre her videoda kapatılır (varsayılan kapalı).
+  Menüdeki "Alt yazı" ya da kumandanın SUBTITLE tuşu açıp kapatır.
+- **Fare kipi uyarısı:** birçok kumandada fare tuşu imleç kipine geçirir;
+  o zaman yön tuşları imleç gezdirir, Tamam imlecin altına tıklar (alt yazı
+  düğmesi, YouTube logosu...). Fare kipi algılanınca uyarı gösterilir.
+- **Teşhis:** Geri kararları, kumandanın alışılmadık tuşları ve fare kipi
+  günlüğe yazılır (GERI / KUMANDA satırları).
+
 ## v1.19 — 28 Ekim 2026
 **Android TV kutusu (kumanda) + hız + koyu tema.** X96Q kutusunda denendi
 (Android 10, 4 çekirdek 1,34 GHz, 2 GB, WebView 80).

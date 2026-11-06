@@ -33,6 +33,7 @@ A minimal, ad-free YouTube player for people who fall asleep listening to videos
 - **Kesintisiz gece:** kurtarma/yenilemede video **kaldığı saniyeden** sürer; internet kesilirse hata sayfasında kalmaz, bağlantı gelince yeniden dener. Kilitlemeden uyursan 25 dk dokunulmadığında ekranı açık tutmayı bırakır (ses sürer).
 - **Aşağı çek → yenile** (orijinal YouTube uygulamasındaki gibi), tam ekran video, geri tuşu ile gezinme, reklam sayacı.
 - **Kara kutu:** uygulama kendi günlüğünü `files/uyku.log`'a yazar (nabız + olaylar + açılışta önceki kapanma nedenleri ve WebView sürümü); logcat silinse bile gece olan biten incelenebilir.
+- **Akışta yalnız videolar:** topluluk gönderileri, anketler, oyunlar ve tanıtım bantları akıştan gizlenir (Shorts ve videolar kalır).
 - **Koyu tema:** YouTube her cihazda koyu açılır (eski WebView'li TV kutularında da); YouTube ayarından açık temayı açıkça seçersen ona uyulur.
 - **Android TV kutusu:** kumandayla tam kullanım (aşağıda), TV'de hız ayarları.
 
@@ -61,11 +62,13 @@ TV'de (Android TV / TV kutusu) uygulama kendiliğinden TV kipine geçer:
 |---|---|---|
 | Yön tuşları | en yakın öğeye geç (mavi çerçeve); video kartı tek durak | sol/sağ 10 sn sar (basılı: 30 sn), yukarı süreyi göster, aşağı tam ekrandan çık |
 | Tamam | aç / tıkla; oynatıcı seçiliyse tam ekran | oynat / duraklat |
-| Geri | önceki sayfa | tam ekrandan çık |
+| Geri | açık menüyü kapat → önceki sayfa → ana sayfa; ana sayfada iki kez basınca çıkar | tam ekrandan çık |
 | Menü | uygulama menüsü (zamanlayıcı, Ara, Abonelikler, Geçmiş…) | — |
 
 - Sayfanın en üstünden yukarı basınca 🛡 rozeti seçilir; Tamam menüyü açar, aşağı sayfaya döner.
 - Shorts'ta yukarı/aşağı önceki/sonraki kısa video.
+- Alt yazı TV'de varsayılan kapalı: menüden ya da kumandanın SUBTITLE tuşuyla açılır/kapanır. YouTube'un harf/rakam kısayolları (C, 0-9…) TV'de kapalı.
+- Kumanda fare kipine geçerse (kumandadaki fare tuşu) uyarı çıkar; yön tuşlarıyla gezmek için fare tuşuna tekrar bas.
 - Kutunun saati yanlışsa (ör. 2020) YouTube açılmaz: Ayarlar → Tarih ve saat → **Otomatik**.
 - Eski kutularda en büyük hız farkını **Android System WebView** güncellemesi yapar (Play Store). Bazı ucuz kutularda WebView üreticinin anahtarıyla imzalı olduğu için Play güncelleyemez ("Can't install"); X96Q böyle.
 

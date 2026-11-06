@@ -95,6 +95,7 @@ public class MainActivity extends Activity {
     private android.content.SharedPreferences prefs;
     private boolean prefLowQuality = true;
     private boolean prefSponsor = true;
+    private volatile boolean prefTvCaptions = false; // TV: alt yazı (varsayılan kapalı)
     private boolean activityStarted = false;
     private Boolean qualityLow = null; // sayfaya en son bildirilen kip
     private final SponsorBlock sponsor = new SponsorBlock();
@@ -111,6 +112,7 @@ public class MainActivity extends Activity {
         prefs = getSharedPreferences("firetube", MODE_PRIVATE);
         prefLowQuality = prefs.getBoolean("lowQuality", true);
         prefSponsor = prefs.getBoolean("sponsorBlock", true);
+        prefTvCaptions = prefs.getBoolean("tvCaptions", false);
         injectSrc = readAsset("inject.js");
         preinjectSrc = readAsset("preinject.js");
         isTv = ((android.app.UiModeManager) getSystemService(UI_MODE_SERVICE)).getCurrentModeType()
@@ -219,6 +221,60 @@ public class MainActivity extends Activity {
         });
     }
 
+    // TV'de sayfaya giden TV bayrakları (ön script ve inject.js'ten önce)
+    private String tvFlagsScript() {
+        return isTv ? "window.__uykuTv=1;window.__uykuTvCaptions=" + prefTvCaptions + ";" : "";
+    }
+
+    /* Teşhis: kumandanın yön/Tamam/Geri dışındaki tuşları (rakam, harf, SUBTITLE,
+       renkli tuşlar...) günlüğe her tür bir kez yazılır — "kendi kendine" olan
+       şeylerin hangi tuştan geldiği sonradan görülebilsin. */
+    private final java.util.Set<Integer> loggedTvKeys = new java.util.HashSet<>();
+
+    private void logTvKey(int code, KeyEvent event) {
+        if (event.getAction() != KeyEvent.ACTION_DOWN || event.getRepeatCount() != 0) return;
+        switch (code) {
+            case KeyEvent.KEYCODE_DPAD_UP:
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+            case KeyEvent.KEYCODE_DPAD_CENTER:
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_BACK:
+                return;
+            default:
+                if (loggedTvKeys.add(code)) appLog("KUMANDA: tuş " + KeyEvent.keyCodeToString(code));
+        }
+    }
+
+    /* TV: kumanda fare kipine geçince (birçok kumandada "fare" tuşu) yön tuşları
+       imleç gezdirir, Tamam imlecin altına tıklar: alt yazı düğmesi, YouTube
+       logosu (ana sayfa) gibi yerlere istemeden basılıyordu. Kullanıcı uyarılır. */
+    private long tvMouseNoticeAt = 0;
+
+    @Override
+    public boolean dispatchGenericMotionEvent(android.view.MotionEvent ev) {
+        if (isTv && ev.isFromSource(android.view.InputDevice.SOURCE_MOUSE)) tvMouseNotice();
+        return super.dispatchGenericMotionEvent(ev);
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+        // fare kipinde Tamam = imlecin altına tıklama (dokunma olayı olarak gelir)
+        if (isTv && ev.isFromSource(android.view.InputDevice.SOURCE_MOUSE)
+                && ev.getAction() == android.view.MotionEvent.ACTION_DOWN) tvMouseNotice();
+        return super.dispatchTouchEvent(ev);
+    }
+
+    private void tvMouseNotice() {
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (tvMouseNoticeAt != 0 && now - tvMouseNoticeAt < 60_000) return;
+        if (tvMouseNoticeAt == 0) appLog("KUMANDA: fare kipi algılandı");
+        tvMouseNoticeAt = now;
+        Toast.makeText(this, "Kumanda fare kipinde: yön tuşlarıyla gezmek için kumandadaki fare tuşuna bas",
+                Toast.LENGTH_LONG).show();
+    }
+
     private void tvFocusWeb() {
         if (!isTv || web == null || customView != null) return;
         web.requestFocus();
@@ -232,11 +288,15 @@ public class MainActivity extends Activity {
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (!isTv || web == null) return super.dispatchKeyEvent(event);
         int code = event.getKeyCode();
+        logTvKey(code, event);
         String key = null;
         switch (code) {
             case KeyEvent.KEYCODE_MENU:
                 if (event.getAction() == KeyEvent.ACTION_UP) showMenu();
                 return true;
+            case KeyEvent.KEYCODE_CAPTIONS:
+                key = "captions";
+                break;
             case KeyEvent.KEYCODE_SEARCH:
                 key = "search";
                 break;
@@ -402,7 +462,7 @@ public class MainActivity extends Activity {
                 in.close();
                 return null;
             }
-            byte[] script = ("<script>" + filter.bootScript() + holdBootScript() + preinjectSrc + "</script>")
+            byte[] script = ("<script>" + tvFlagsScript() + filter.bootScript() + holdBootScript() + preinjectSrc + "</script>")
                     .getBytes(StandardCharsets.UTF_8);
             java.io.InputStream body = new java.io.SequenceInputStream(java.util.Collections.enumeration(
                     java.util.Arrays.asList(
@@ -532,7 +592,7 @@ public class MainActivity extends Activity {
                 if (netRetries > 0) appLog("AG: sayfa yeniden yüklendi");
                 netRetries = 0;
                 bridgeHandler.removeCallbacks(netRetry);
-                if (injectSrc != null) view.evaluateJavascript((isTv ? "window.__uykuTv=1;" : "") + injectSrc, null);
+                if (injectSrc != null) view.evaluateJavascript(tvFlagsScript() + injectSrc, null);
                 ensureDarkTheme(); // sonraki yüklemeler için (çıkış/girişte çerez yenilenebilir)
                 // yeni sayfa kalite kipini bilmez: her yüklemede bildirilir
                 if (qualityLow == null) updateQualityMode();
@@ -798,6 +858,14 @@ public class MainActivity extends Activity {
             });
         }
 
+        // TV: alt yazı ayarı değişti (menü / SUBTITLE tuşu) — sonraki açılışlarda da geçerli
+        @JavascriptInterface
+        public void onTvCaptions(boolean on) {
+            prefTvCaptions = on;
+            prefs.edit().putBoolean("tvCaptions", on).apply();
+            appLog("AYAR: TV alt yazı " + (on ? "açık" : "kapalı"));
+        }
+
         // TV: sayfanın en üstünden yukarı basılınca odak uygulama menüsünün rozetine
         @JavascriptInterface
         public void focusChip() {
@@ -908,6 +976,8 @@ public class MainActivity extends Activity {
             acts.add(() -> web.evaluateJavascript("window.__uykuTvKey && window.__uykuTvKey('search')", null));
             items.add("📺 Abonelikler");
             acts.add(() -> web.loadUrl("https://m.youtube.com/feed/subscriptions"));
+            items.add("💬 Alt yazı: " + (prefTvCaptions ? "AÇIK" : "KAPALI"));
+            acts.add(() -> web.evaluateJavascript("window.__uykuTvKey && window.__uykuTvKey('captions')", null));
             items.add("🕘 Geçmiş");
             acts.add(() -> web.loadUrl("https://m.youtube.com/feed/history"));
         }
@@ -990,15 +1060,8 @@ public class MainActivity extends Activity {
     public void onBackPressed() {
         if (customView != null) {
             chromeClient.onHideCustomView();
-        } else if (isTv && tvFullscreen) {
-            // TV: Geri önce sayfanın tam ekranından çıkar (izleme sayfasında kalınır);
-            // sayfa tam ekranda değilse (durum eskimiş) normal geri
-            web.evaluateJavascript("window.__uykuTvKey ? window.__uykuTvKey('back') : false", v -> {
-                if ("true".equals(v)) return;
-                tvFullscreen = false;
-                chip.setVisibility(View.VISIBLE);
-                onBackPressed();
-            });
+        } else if (isTv) {
+            tvBack();
         } else if (web.canGoBack()) {
             // geri tuşu sayfaya dokunuş olarak ulaşmaz: kullanıcı uyanık, kilit kalksın
             web.evaluateJavascript("window.__uykuWake && window.__uykuWake()", null);
@@ -1006,6 +1069,47 @@ public class MainActivity extends Activity {
         } else {
             super.onBackPressed();
         }
+    }
+
+    /* TV: kumandada bir fazla Geri'ye basınca uygulama kapanıyordu ("videolar
+       arasında gezerken sürekli çıkıyor"). Geri sırasıyla: sayfanın tam ekranı /
+       açık YouTube menüsü → önceki sayfa → ana sayfa; uygulamadan yalnız ana
+       sayfada 2,5 sn içinde iki kez basınca çıkılır. */
+    private long tvBackAt = 0;
+
+    private void tvBack() {
+        web.evaluateJavascript("window.__uykuTvKey ? window.__uykuTvKey('back') : false", v -> {
+            if ("true".equals(v)) {
+                appLog("GERI: tam ekran / menü kapandı");
+                return;
+            }
+            if (tvFullscreen) {
+                tvFullscreen = false;
+                chip.setVisibility(View.VISIBLE);
+            }
+            if (web.canGoBack()) {
+                appLog("GERI: önceki sayfa");
+                web.evaluateJavascript("window.__uykuWake && window.__uykuWake()", null);
+                web.goBack();
+                return;
+            }
+            Uri u = web.getUrl() == null ? null : Uri.parse(web.getUrl());
+            boolean home = u == null || u.getPath() == null || u.getPath().isEmpty() || "/".equals(u.getPath());
+            if (!home) {
+                appLog("GERI: ana sayfaya (geçmiş yok: " + u.getPath() + ")");
+                web.loadUrl(START_URL);
+                return;
+            }
+            long now = android.os.SystemClock.elapsedRealtime();
+            if (now - tvBackAt < 2500) {
+                appLog("GERI: uygulamadan çıkış (iki kez)");
+                finish();
+                return;
+            }
+            appLog("GERI: ana sayfada — çıkmak için bir kez daha");
+            tvBackAt = now;
+            Toast.makeText(this, "Çıkmak için Geri'ye tekrar bas", Toast.LENGTH_SHORT).show();
+        });
     }
 
     @Override

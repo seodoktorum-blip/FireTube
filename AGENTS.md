@@ -1,4 +1,4 @@
-Şu an: v1.19, izleme | Son yapılan: telefonda v1.19 doğrulandı | Sıradaki: yok (gece günlüğü izlensin; TV'de kullanıcı geri bildirimi)
+Şu an: v1.19.2, kullanıcı denemesi | Son yapılan: akışta gönderi/anket gizleme + boş sayfa bekçisi; kutuya kuruldu | Sıradaki: kullanıcı TV'de denesin; commit (isterse)
 
 # FireTube — plan
 
@@ -59,6 +59,24 @@ Bulgular: kumanda tuşları sayfaya gitmiyor (Android odağı 🛡 rozetinde; We
 - [x] WebView güncellemesi denendi (kullanıcı Play'e giriş yaptı): kurulamıyor — kutudaki WebView 80 üretici anahtarıyla imzalı ("signatures do not match", Play hata 6000); sağlayıcı listesinde yalnız com.google.android.webview var (Beta/Dev yok). Root olmadan güncellenemez
 - [x] 5. Telefonda doğrulama (28 Eki): ön script aktif, oturum açık, TV kipi kapalı, koyu tema (f6=40000000 → 40000400, diğer bitler korundu), ana sayfa HTML 2,2 sn / ilk boyama 2,3 sn, izleme sayfası HTML 1,8 sn, video sesli oynadı
 - [x] 6. Commit + push: b77d1a1 (seodoktorum-blip hesabıyla)
+
+# v1.19.1 — TV'de kullanım sorunları (30 Eki 2026; kullanıcı: "sürekli app'dan çıkıyor, alt yazı kendiliğinden açılıyor, videodan çıkıp ana sayfaya geliyor")
+Bulgular (kutu yeniden başlamış, logcat yok; uyku.log): her kapanış ACILIS + "arka plana geçti" + "SERVIS: durdu" (çökme değil, finish = kök sayfada Geri). Kutuda IR düzenleri: MOUSE, DEL, rakamlar, SUBTITLE tuşları; sunxi-ir.kl 31→C. YouTube kısayolları (c, 0-9) + yapışkan alt yazı tercihi.
+- [x] TV Geri: JS önce (tam ekran / açık menünün kapat düğmesi) → goBack → geçmiş yoksa ana sayfa → ana sayfada 2,5 sn içinde iki kez = çıkış (Toast). Kutuda: 4 basış uygulamada kaldı, iki hızlı basış çıktı. Kararlar günlükte (GERI)
+- [x] YouTube kısayolları TV'de kapalı: preinject'te YouTube'dan önce kayıtlı keydown kapısı (__uykuTv gömülür), tek karakter + Home/End/F/Subtitle engellenir; yön/Tamam inject tvKey'e (stopImmediatePropagation). Kutuda: C ve 5 etkisiz
+- [x] Alt yazı: TV ayarı (tvCaptions, varsayılan kapalı) her videoda uygulanır (isSubtitlesOn/toggleSubtitles, video başına 3 deneme); menü "Alt yazı" + KEYCODE_CAPTIONS. Kutuda (TED iG9CE55wbtY, 64 iz): YouTube'un açması 1 sn'de kapandı, SUBTITLE aç/kapat çalıştı
+- [x] Fare kipi: SOURCE_MOUSE olayında uyarı (dakikada bir) + günlük; alışılmadık tuşlar günlüğe (KUMANDA)
+- [x] 1.19.1 (versionCode 22) kutuya kuruldu; telefon etkilenmez (hepsi TV'ye bağlı)
+- [ ] Kullanıcı TV'de denesin → v1.19.2'de izleniyor
+- [ ] Commit + push → v1.19.2 ile birlikte
+
+# v1.19.2 — akışta yalnız videolar + boş sayfa bekçisi (30 Eki 2026)
+- [x] hideNonVideo (inject, tüm cihazlar, ön plan döngüsü): gönderi/anket/anket kutusu/oyun/tanıtım bileşenleri üst düzey akış öğesiyle gizlenir; /posts, /community hariç. Kutuda yapay gönderi+anket gizlendi, 4 gerçek öğe kaldı
+- [x] Bulgu: 30 Eki ~20:09-20:18 kutuda tam yüklemeler boş kaldı — ytcsi pot_ist'te takılı (PoToken), JS hatası yok, istek engeli yok, setTimeout/rAF çalışıyor; GenerateIT başarılı. Ön scriptsiz de aynı; yeni süreçte (20:21) ve sonrasında yeniden üretilemedi (YouTube 2.20261029.11.00 geçişi). ytAtR denemesi etkisiz → geri alındı
+- [x] Açılış bekçisi: 30 sn'de ytm-app metni yoksa son ytcsi adımıyla UYARI + uykuReload. Normal sayfada sessiz
+- [x] 1.19.2 (versionCode 23) kutuya kuruldu; testler geçti
+- [ ] Kullanıcı TV'de denesin (1.19.1 + 1.19.2); günlükte GERI / KUMANDA / "çizilmedi" satırları izlensin
+- [ ] Commit + push (kullanıcı isterse) — 1.19.1 + 1.19.2 birlikte
 
 ## Açık işler
 - [ ] `./gradlew` ilk çalıştırmada Gradle 9.8.0 dağıtımını indirir (yerelde denenmedi)
